@@ -1,0 +1,5 @@
+{
+    "template_dir": "tools/sample_template",
+    "out_dir": "tools/tmp",
+    "name": "example"
+}

@@ -1,0 +1,4 @@
+@require(name)
+<resources>
+    <string name="app_name">sample_@{name}</string>
+</resources>

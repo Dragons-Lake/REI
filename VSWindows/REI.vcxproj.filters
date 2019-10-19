@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="REI">
+      <UniqueIdentifier>{5d66ef4f-8813-4535-8c7c-e17c9f2ea6ca}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="REI\3rdParty">
+      <UniqueIdentifier>{c4dcf8d1-9af4-4ea7-9d41-745ca61b47a1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="REI\3rdParty\spirv_reflect">
+      <UniqueIdentifier>{4fffcfbd-bb1c-4550-b9d7-97eeed44c0ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="REI\Interface">
+      <UniqueIdentifier>{6c67436a-ccbf-43f8-9faf-e4e4c756259e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="REI\Renderer">
+      <UniqueIdentifier>{9b6a7df9-367c-40c3-990b-998726d55d23}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\sources\REI\3rdParty\spirv_reflect\spirv_reflect.c">
+      <Filter>REI\3rdParty\spirv_reflect</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sources\REI\Renderer\RendererVk.cpp">
+      <Filter>REI\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sources\REI\Renderer\ShaderReflection.cpp">
+      <Filter>REI\Renderer</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\sources\REI\3rdParty\spirv_reflect\spirv.h">
+      <Filter>REI\3rdParty\spirv_reflect</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\3rdParty\spirv_reflect\spirv_reflect.h">
+      <Filter>REI\3rdParty\spirv_reflect</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\Interface\Common.h">
+      <Filter>REI\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\Renderer\Renderer.h">
+      <Filter>REI\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\Renderer\ShaderReflection.h">
+      <Filter>REI\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\Interface\Thread.h">
+      <Filter>REI\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\Interface\OperatingSystem.h">
+      <Filter>REI\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sources\REI\Renderer\RendererVk.h">
+      <Filter>REI\Renderer</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

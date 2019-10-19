@@ -1,0 +1,10 @@
+test_results = [
+    {output: "x86/ICT_sample_basic_draw_frame_0.png", reference: "ref/ICT_sample_basic_draw_frame_0.png"},
+    {output: "x86/ICT_sample_fontstash_frame_0.png", reference: "ref/ICT_sample_fontstash_frame_0.png"},
+    {output: "x86/ICT_sample_nanovg_frame_0.png", reference: "ref/ICT_sample_nanovg_frame_0.png"},
+    {output: "x86/ICT_sample_triangle_frame_0.png", reference: "ref/ICT_sample_triangle_frame_0.png"},
+    {output: "x64/ICT_sample_basic_draw_frame_0.png", reference: "ref/ICT_sample_basic_draw_frame_0.png"},
+    {output: "x64/ICT_sample_fontstash_frame_0.png", reference: "ref/ICT_sample_fontstash_frame_0.png"},
+    {output: "x64/ICT_sample_triangle_frame_0.png", reference: "ref/ICT_sample_triangle_frame_0.png"},
+    {output: "x64/ICT_sample_nanovg_frame_0.png", reference: "ref/ICT_sample_nanovg_frame_0.png"},
+];

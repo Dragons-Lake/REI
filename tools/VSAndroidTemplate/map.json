@@ -1,0 +1,10 @@
+{
+    "AndroidManifest.xml": "AndroidManifest.xml",
+    "build.xml": "build.xml",
+    "project.properties": "project.properties",
+    "sample.apk.androidproj.template": "sample_{name}.apk.androidproj",
+    "sample.apk.androidproj.user": "sample_{name}.apk.androidproj.user",
+    "sample.vcxproj.template": "sample_{name}.vcxproj",
+    "sample.vcxproj.filters.template": "sample_{name}.vcxproj.filters",
+    "sample.vcxproj.user": "sample_{name}.vcxproj.user"
+}
