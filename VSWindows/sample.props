@@ -45,5 +45,4 @@
     </Link>
   </ItemDefinitionGroup>
   <Import Condition="$(VCPKG_ROOT) != ''" Project="$(VCPKG_ROOT)scripts\buildsystems\msbuild\vcpkg.targets" />
-  <Import Project="..\VSShared\compile_vk_glsl.targets" />
 </Project>
