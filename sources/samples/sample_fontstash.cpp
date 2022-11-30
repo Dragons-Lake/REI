@@ -1,17 +1,32 @@
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
 #ifndef SAMPLE_TEST
 #    include "REI_Sample/sample.h"
 
 #    include "REI_Integration/REI_fontstash.h"
 #    include "REI_Integration/BasicDraw.h"
+#    include <math.h>
 #endif
-
+#include <math.h>
 enum
 {
     BUFFER_SIZE = 1 << 20,
 };
 
 static REI_RL_State* resourceLoader;
-static REI_CmdPool*  cmdPool;
+static REI_CmdPool*  cmdPool[FRAME_COUNT];
 static REI_Cmd*      pCmds[FRAME_COUNT];
 static REI_Texture*  depthBuffer;
 
@@ -33,9 +48,11 @@ int sample_on_init()
 {
     REI_RL_addResourceLoader(renderer, nullptr, &resourceLoader);
 
-    REI_addCmdPool(renderer, gfxQueue, false, &cmdPool);
     for (size_t i = 0; i < FRAME_COUNT; ++i)
-        REI_addCmd(renderer, cmdPool, false, &pCmds[i]);
+    {
+        REI_addCmdPool(renderer, gfxQueue, false, &cmdPool[i]);
+        REI_addCmd(renderer, cmdPool[i], false, &pCmds[i]);
+    }
 
     return 1;
 }
@@ -45,8 +62,10 @@ void sample_on_fini()
     REI_RL_waitBatchCompleted(resourceLoader);
 
     for (size_t i = 0; i < FRAME_COUNT; ++i)
-        REI_removeCmd(renderer, cmdPool, pCmds[i]);
-    REI_removeCmdPool(renderer, cmdPool);
+    {
+        REI_removeCmd(renderer, cmdPool[i], pCmds[i]);
+        REI_removeCmdPool(renderer, cmdPool[i]);
+    }
 
     REI_RL_removeResourceLoader(resourceLoader);
 }
@@ -76,11 +95,15 @@ void sample_on_swapchain_init(const REI_SwapchainDesc* swapchainDesc)
 
     basicDraw = REI_BasicDraw_Init(renderer, &srInfo);
 
-    REI_Fontstash_Desc fsInfo = {
-        BUFFER_SIZE, swapchainDesc->colorFormat, depthRTDesc.format, swapchainDesc->sampleCount,
-        FRAME_COUNT, swapchainDesc->width,       swapchainDesc->height,    1024,
-        1024
-    };
+    REI_Fontstash_Desc fsInfo = { BUFFER_SIZE,
+                                  swapchainDesc->colorFormat,
+                                  depthRTDesc.format,
+                                  swapchainDesc->sampleCount,
+                                  FRAME_COUNT,
+                                  swapchainDesc->width,
+                                  swapchainDesc->height,
+                                  1024,
+                                  1024 };
 
     char path[256];
 
@@ -297,7 +320,9 @@ void sample_on_frame(const FrameData* frameData)
 {
     REI_Texture* renderTarget = frameData->backBuffer;
     REI_Cmd*     cmd = pCmds[frameData->setIndex];
+    REI_CmdPool* pCmdPool = cmdPool[frameData->setIndex];
 
+    REI_resetCmdPool(renderer, pCmdPool);
     REI_beginCmd(cmd);
 
     REI_TextureBarrier barriers[] = {
@@ -327,7 +352,8 @@ void sample_on_frame(const FrameData* frameData)
     REI_Fontstash_Render(fonsCtx, cmd);
 
     sample_cmdPrepareBackbuffer(cmd, renderTarget, REI_RESOURCE_STATE_RENDER_TARGET);
-
+    barriers[1] = { depthBuffer, REI_RESOURCE_STATE_DEPTH_WRITE, REI_RESOURCE_STATE_COMMON };
+    REI_cmdResourceBarrier(cmd, 0, nullptr, 1, &barriers[1]);
     REI_endCmd(cmd);
 
     sample_submit(cmd);

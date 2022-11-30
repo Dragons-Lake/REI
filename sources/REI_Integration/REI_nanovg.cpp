@@ -1,10 +1,26 @@
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
 #include <algorithm>
-#include <vector>
+#include <cmath>
 #ifdef _WIN32
-#    define WIN32_LEAN_AND_MEAN
+#    ifndef WIN32_LEAN_AND_MEAN
+#        define WIN32_LEAN_AND_MEAN 1
+#    endif
 #    include "windows.h"
 #endif
 
@@ -14,6 +30,8 @@
 
 #include "ResourceLoader.h"
 #include "REI_nanovg.h"
+
+static const uint32_t MAX_SHADER_COUNT = 2;
 
 enum REI_NanoVG_textureflags
 {
@@ -87,47 +105,39 @@ struct REI_NanoVG_fragUniforms
 
 struct REI_NanoVG_State
 {
-    REI_NanoVG_Desc    desc;
-    REI_Renderer*      renderer;
-    REI_Queue*         queue;
-    REI_RL_State*      loader;
-    REI_RootSignature* rootSignature;
-    REI_DescriptorSet* uniDescriptorSet;
-    REI_DescriptorSet* texDescriptorSet;
-    REI_Pipeline*      triPipeline;
-    REI_Pipeline*      fillPipeline;
-    REI_Pipeline*      maskPipeline;
-    REI_Pipeline*      drawPipeline;
-    REI_Sampler*       sampler;
-    REI_Shader*        shader;
-    REI_Buffer**       vtxBuffers;
-    void**             vtxBuffersAddr;
-    REI_Buffer**       uniBuffers;
-    void**             uniBuffersAddr;
-    REI_Cmd*           cmd;
-    uint32_t           setIndex;
-    uint32_t           width;
-    uint32_t           height;
-    uint32_t           vtxCount;
-    uint32_t           uniCount;
+    REI_NanoVG_Desc           desc;
+    REI_Renderer*             renderer;
+    REI_AllocatorCallbacks    allocator;
+    REI_Queue*                queue;
+    REI_RL_State*             loader;
+    REI_RootSignature*        rootSignature;
+    REI_DescriptorTableArray* uniDescriptorSet;
+    REI_DescriptorTableArray* texDescriptorSet;
+    REI_Pipeline*             triPipeline;
+    REI_Pipeline*             fillPipeline;
+    REI_Pipeline*             maskPipeline;
+    REI_Pipeline*             drawPipeline;
+    REI_Sampler*              sampler;
+    REI_Buffer**              vtxBuffers;
+    void**                    vtxBuffersAddr;
+    REI_Buffer**              uniBuffers;
+    void**                    uniBuffersAddr;
+    REI_Texture*              dummyTexture;
+    REI_Cmd*                  cmd;
+    uint32_t                  setIndex;
+    uint32_t                  width;
+    uint32_t                  height;
+    uint32_t                  vtxCount;
+    uint32_t                  uniCount;
 
-    std::vector<REI_NanoVG_call>    calls;
-    std::vector<REI_NanoVG_texture> textures;
+    REI_vector<REI_NanoVG_call>    calls;
+    REI_vector<REI_NanoVG_texture> textures;
 };
 
-// fontstash.vert, compiled with:
-// # glslangValidator -V -x -o fontstash.vert.u32.h fontstash.vert
-// see sources/shaders/build.ninja
-static uint32_t vert_spv[] = {
-#include "spv/nanovg.vert.u32.h"
-};
 
-// fontstash.frag, compiled with:
-// # glslangValidator -V -x -o fontstash.frag.u32.h fontstash.frag
-// see sources/shaders/build.ninja
-static uint32_t frag_spv[] = {
-#include "spv/nanovg.frag.u32.h"
-};
+#include "shaderbin/nanovg_vs.bin.h"
+
+#include "shaderbin/nanovg_ps.bin.h"
 
 #define OFFSETOF(type, mem) ((size_t)(&(((type*)0)->mem)))
 
@@ -159,54 +169,99 @@ REI_NanoVG_fragUniforms* allocUniformData(REI_NanoVG_State* state)
 static int REI_NanoVG_renderCreate(void* userPtr)
 {
     REI_NanoVG_State* state = (REI_NanoVG_State*)userPtr;
-    REI_ShaderDesc    shaderDesc{};
-    shaderDesc.stages = REI_SHADER_STAGE_VERT | REI_SHADER_STAGE_FRAG;
-    shaderDesc.vert = { (uint8_t*)vert_spv, sizeof(vert_spv) };
-    shaderDesc.frag = { (uint8_t*)frag_spv, sizeof(frag_spv) };
-    REI_addShader(state->renderer, &shaderDesc, &state->shader);
+    REI_ShaderDesc    shaderDesc[MAX_SHADER_COUNT] = {
+        shaderDesc[0] = { REI_SHADER_STAGE_VERT, (uint8_t*)nanovg_vs_bytecode, sizeof(nanovg_vs_bytecode) },
+        shaderDesc[1] = { REI_SHADER_STAGE_FRAG, (uint8_t*)nanovg_ps_bytecode, sizeof(nanovg_ps_bytecode) }
+    };
+    REI_Shader* shaders[MAX_SHADER_COUNT] = {};
+    REI_addShaders(state->renderer, shaderDesc, MAX_SHADER_COUNT, shaders);
 
-    REI_SamplerDesc samplerDesc = { REI_FILTER_LINEAR,
-                                    REI_FILTER_LINEAR,
-                                    REI_MIPMAP_MODE_LINEAR,
-                                    REI_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    REI_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    REI_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    0.0f,
-                                    1.0f,
-                                    REI_CMP_NEVER };
+    REI_SamplerDesc samplerDesc = {
+        REI_FILTER_LINEAR,
+        REI_FILTER_LINEAR,
+        REI_MIPMAP_MODE_LINEAR,
+        REI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        REI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        REI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        REI_CMP_NEVER,
+        0.0f,
+        1.0f,
+    };
     REI_addSampler(state->renderer, &samplerDesc, &state->sampler);
 
-    const char*           staticSampNames[] = { "uSampler" };
     REI_RootSignatureDesc rootSigDesc = {};
-    rootSigDesc.ppShaders = &state->shader;
-    rootSigDesc.shaderCount = 1;
-    rootSigDesc.ppStaticSamplerNames = staticSampNames;
-    rootSigDesc.ppStaticSamplers = &state->sampler;
-    rootSigDesc.staticSamplerCount = 1;
+
+    REI_PushConstantRange pConst[2] = {};
+    pConst[0].offset = 0;
+    pConst[0].size = sizeof(float[4]);
+    pConst[0].stageFlags = REI_SHADER_STAGE_VERT;
+
+    pConst[1].offset = 16;
+    pConst[1].size = sizeof(uint32_t);
+    pConst[1].stageFlags = REI_SHADER_STAGE_FRAG;
+
+    REI_DescriptorBinding binding[2] = {};
+
+    binding[0].descriptorCount = 1;
+    binding[0].descriptorType = REI_DESCRIPTOR_TYPE_BUFFER;
+    binding[0].reg = 1;
+    binding[0].binding = 1;
+
+    binding[1].descriptorCount = 1;
+    binding[1].descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    binding[1].reg = 0;
+    binding[1].binding = 0;
+
+    REI_StaticSamplerBinding staticSamplerBinding = {};
+    staticSamplerBinding.descriptorCount = 1;
+    staticSamplerBinding.reg = 0;
+    staticSamplerBinding.binding = 0;
+    staticSamplerBinding.ppStaticSamplers = &state->sampler;
+
+    REI_DescriptorTableLayout setLayout[2] = {};
+    setLayout[0].bindingCount = 1;
+    setLayout[0].pBindings = binding;
+    setLayout[0].slot = REI_DESCRIPTOR_TABLE_SLOT_1;
+    setLayout[0].stageFlags = REI_SHADER_STAGE_FRAG;
+
+    setLayout[1].bindingCount = 1;
+    setLayout[1].pBindings = binding + 1;
+    setLayout[1].slot = REI_DESCRIPTOR_TABLE_SLOT_2;
+    setLayout[1].stageFlags = REI_SHADER_STAGE_FRAG;
+
+
+    rootSigDesc.pipelineType = REI_PIPELINE_TYPE_GRAPHICS;
+    rootSigDesc.pushConstantRangeCount = 2;
+    rootSigDesc.pPushConstantRanges = pConst;
+    rootSigDesc.tableLayoutCount = 2;
+    rootSigDesc.pTableLayouts = setLayout;
+    rootSigDesc.staticSamplerBindingCount = 1;
+    rootSigDesc.staticSamplerSlot = REI_DESCRIPTOR_TABLE_SLOT_0;
+    rootSigDesc.staticSamplerStageFlags = REI_SHADER_STAGE_FRAG;
+    rootSigDesc.pStaticSamplerBindings = &staticSamplerBinding;
+
     REI_addRootSignature(state->renderer, &rootSigDesc, &state->rootSignature);
 
-    REI_DescriptorSetDesc descriptorSetDesc = {};
+    REI_DescriptorTableArrayDesc descriptorSetDesc = {};
     descriptorSetDesc.pRootSignature = state->rootSignature;
-    descriptorSetDesc.maxSets = state->desc.resourceSetCount;
-    descriptorSetDesc.setIndex = REI_DESCRIPTOR_SET_INDEX_1;
-    REI_addDescriptorSet(state->renderer, &descriptorSetDesc, &state->uniDescriptorSet);
+    descriptorSetDesc.maxTables = state->desc.resourceSetCount;
+    descriptorSetDesc.slot = REI_DESCRIPTOR_TABLE_SLOT_1;
+    REI_addDescriptorTableArray(state->renderer, &descriptorSetDesc, &state->uniDescriptorSet);
 
-    descriptorSetDesc.maxSets = state->desc.maxTextures;
-    descriptorSetDesc.setIndex = REI_DESCRIPTOR_SET_INDEX_2;
-    REI_addDescriptorSet(state->renderer, &descriptorSetDesc, &state->texDescriptorSet);
+    descriptorSetDesc.maxTables = state->desc.maxTextures;
+    descriptorSetDesc.slot = REI_DESCRIPTOR_TABLE_SLOT_2;
+    REI_addDescriptorTableArray(state->renderer, &descriptorSetDesc, &state->texDescriptorSet);
 
-    REI_VertexLayout vertexLayout{};
-    vertexLayout.attribCount = 2;
-    vertexLayout.attribs[0].semanticNameLength = 4;
-    strcpy(vertexLayout.attribs[0].semanticName, "aPos");
-    vertexLayout.attribs[0].offset = OFFSETOF(NVGvertex, x);
-    vertexLayout.attribs[0].location = 0;
-    vertexLayout.attribs[0].format = REI_FMT_R32G32_SFLOAT;
-    vertexLayout.attribs[1].semanticNameLength = 3;
-    strcpy(vertexLayout.attribs[1].semanticName, "aUV");
-    vertexLayout.attribs[1].offset = OFFSETOF(NVGvertex, u);
-    vertexLayout.attribs[1].location = 1;
-    vertexLayout.attribs[1].format = REI_FMT_R32G32_SFLOAT;
+    const size_t     vertexAttribCount = 2;
+    REI_VertexAttrib vertexAttribs[vertexAttribCount] = {};
+    vertexAttribs[0].semantic = REI_SEMANTIC_POSITION0;
+    vertexAttribs[0].offset = OFFSETOF(NVGvertex, x);
+    vertexAttribs[0].location = 0;
+    vertexAttribs[0].format = REI_FMT_R32G32_SFLOAT;
+    vertexAttribs[1].semantic = REI_SEMANTIC_TEXCOORD0;
+    vertexAttribs[1].offset = OFFSETOF(NVGvertex, u);
+    vertexAttribs[1].location = 1;
+    vertexAttribs[1].format = REI_FMT_R32G32_SFLOAT;
 
     REI_RasterizerStateDesc rasterizerState{};
     rasterizerState.cullMode = REI_CULL_MODE_BACK;
@@ -236,17 +291,20 @@ static int REI_NanoVG_renderCreate(void* userPtr)
     depthState.stencilReadMask = 0xFF;
     depthState.stencilWriteMask = 0xFF;
 
+    REI_Format       colorFormat = (REI_Format)state->desc.colorFormat;
     REI_PipelineDesc pipelineDesc = {};
     pipelineDesc.type = REI_PIPELINE_TYPE_GRAPHICS;
     REI_GraphicsPipelineDesc& graphicsDesc = pipelineDesc.graphicsDesc;
     graphicsDesc.primitiveTopo = REI_PRIMITIVE_TOPO_TRI_LIST;
     graphicsDesc.renderTargetCount = 1;
-    graphicsDesc.pColorFormats = &state->desc.colorFormat;
+    graphicsDesc.pColorFormats = &colorFormat;
     graphicsDesc.sampleCount = state->desc.sampleCount;
     graphicsDesc.depthStencilFormat = state->desc.depthStencilFormat;
     graphicsDesc.pRootSignature = state->rootSignature;
-    graphicsDesc.pShaderProgram = state->shader;
-    graphicsDesc.pVertexLayout = &vertexLayout;
+    graphicsDesc.ppShaderPrograms = shaders;
+    graphicsDesc.shaderProgramCount = MAX_SHADER_COUNT;
+    graphicsDesc.pVertexAttribs = vertexAttribs;
+    graphicsDesc.vertexAttribCount = vertexAttribCount;
     graphicsDesc.pDepthState = &depthState;
     graphicsDesc.pRasterizerState = &rasterizerState;
     graphicsDesc.pBlendState = &blendState;
@@ -283,15 +341,19 @@ static int REI_NanoVG_renderCreate(void* userPtr)
 
     REI_addPipeline(state->renderer, &pipelineDesc, &state->drawPipeline);
 
+    REI_removeShaders(state->renderer, MAX_SHADER_COUNT, shaders);
+
     REI_BufferDesc vbDesc = {};
-    vbDesc.descriptors = REI_DESCRIPTOR_TYPE_VERTEX_BUFFER;
+    vbDesc.descriptors = REI_DESCRIPTOR_TYPE_BUFFER | REI_DESCRIPTOR_TYPE_VERTEX_BUFFER;
     vbDesc.memoryUsage = REI_RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
     vbDesc.vertexStride = sizeof(NVGvertex);
+    vbDesc.structStride = sizeof(NVGvertex);
     vbDesc.size = state->desc.maxVerts * sizeof(NVGvertex);
+    vbDesc.elementCount = state->desc.maxVerts;
     vbDesc.flags = REI_BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT | REI_BUFFER_CREATION_FLAG_OWN_MEMORY_BIT;
 
-    state->vtxBuffers = (REI_Buffer**)REI_calloc(state->desc.resourceSetCount, sizeof(REI_Buffer*));
-    state->vtxBuffersAddr = (void**)REI_calloc(state->desc.resourceSetCount, sizeof(void*));
+    state->vtxBuffers = (REI_Buffer**)REI_calloc(state->allocator, state->desc.resourceSetCount * sizeof(REI_Buffer*));
+    state->vtxBuffersAddr = (void**)REI_calloc(state->allocator, state->desc.resourceSetCount * sizeof(void*));
     for (uint32_t i = 0; i < state->desc.resourceSetCount; ++i)
     {
         REI_addBuffer(state->renderer, &vbDesc, &state->vtxBuffers[i]);
@@ -301,16 +363,19 @@ static int REI_NanoVG_renderCreate(void* userPtr)
     REI_NanoVG_fragUniforms frag{};
     frag.strokeThr = -1.0f;
     frag.type = NSVG_SHADER_SIMPLE;
-    state->uniBuffers = (REI_Buffer**)REI_calloc(state->desc.resourceSetCount, sizeof(REI_Buffer*));
-    state->uniBuffersAddr = (void**)REI_calloc(state->desc.resourceSetCount, sizeof(void*));
+    state->uniBuffers = (REI_Buffer**)REI_calloc(state->allocator, state->desc.resourceSetCount * sizeof(REI_Buffer*));
+    state->uniBuffersAddr = (void**)REI_calloc(state->allocator, state->desc.resourceSetCount * sizeof(void*));
     REI_BufferDesc ubiDesc = {};
     ubiDesc.descriptors = REI_DESCRIPTOR_TYPE_BUFFER;
     ubiDesc.memoryUsage = REI_RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+    ubiDesc.structStride = sizeof(REI_NanoVG_fragUniforms);
     ubiDesc.size = state->desc.maxDraws * sizeof(REI_NanoVG_fragUniforms);
+    ubiDesc.elementCount = state->desc.maxDraws;
     ubiDesc.flags = REI_BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT | REI_BUFFER_CREATION_FLAG_OWN_MEMORY_BIT;
     REI_DescriptorData descrUpdateDesc{};
-    descrUpdateDesc.pName = "uPaints";
+    descrUpdateDesc.descriptorIndex = 0; //uPaints;
     descrUpdateDesc.count = 1;
+    descrUpdateDesc.descriptorType = REI_DESCRIPTOR_TYPE_BUFFER;
     for (uint32_t i = 0; i < state->desc.resourceSetCount; ++i)
     {
         REI_addBuffer(state->renderer, &ubiDesc, &state->uniBuffers[i]);
@@ -319,10 +384,52 @@ static int REI_NanoVG_renderCreate(void* userPtr)
         memcpy(state->uniBuffersAddr[i], &frag, sizeof(REI_NanoVG_fragUniforms));
 
         descrUpdateDesc.ppBuffers = &state->uniBuffers[i];
-        REI_updateDescriptorSet(state->renderer, state->uniDescriptorSet, i, 1, &descrUpdateDesc);
+        descrUpdateDesc.tableIndex = i;
+        REI_updateDescriptorTableArray(state->renderer, state->uniDescriptorSet, 1, &descrUpdateDesc);
     }
 
-    REI_resetDescriptorSet(state->renderer, state->texDescriptorSet, 0);
+    REI_TextureDesc dummyTextureDesc = {};
+    dummyTextureDesc.format = REI_FMT_R8G8B8A8_UNORM;
+    dummyTextureDesc.width = 2;
+    dummyTextureDesc.height = 2;
+    dummyTextureDesc.depth = 1;
+    dummyTextureDesc.mipLevels = 1;
+    dummyTextureDesc.arraySize = 1;
+    dummyTextureDesc.sampleCount = REI_SAMPLE_COUNT_1;
+    dummyTextureDesc.descriptors = REI_DESCRIPTOR_TYPE_TEXTURE;
+    REI_addTexture(state->renderer, &dummyTextureDesc, &state->dummyTexture);
+
+    // Create command buffer to transition dummyTexture to the correct state
+    REI_Queue*   graphicsQueue = state->queue;
+    REI_CmdPool* cmdPool = NULL;
+    REI_Cmd*     cmd = NULL;
+
+    REI_addCmdPool(state->renderer, graphicsQueue, false, &cmdPool);
+    REI_resetCmdPool(state->renderer, cmdPool);
+    REI_addCmd(state->renderer, cmdPool, false, &cmd);
+
+    // Transition resources
+    REI_beginCmd(cmd);
+
+    REI_TextureBarrier textureBarrier{ state->dummyTexture, REI_RESOURCE_STATE_UNDEFINED,
+                                       REI_RESOURCE_STATE_SHADER_RESOURCE };
+    REI_cmdResourceBarrier(cmd, 0, nullptr, 1, &textureBarrier);
+    REI_endCmd(cmd);
+
+    REI_queueSubmit(graphicsQueue, 1, &cmd, NULL, 0, NULL, 0, NULL);
+    REI_waitQueueIdle(graphicsQueue);
+
+    // Delete command buffer
+    REI_removeCmd(state->renderer, cmdPool, cmd);
+    REI_removeCmdPool(state->renderer, cmdPool);
+
+    descrUpdateDesc.count = 1;
+    descrUpdateDesc.descriptorIndex = 0;
+    descrUpdateDesc.ppTextures = &state->dummyTexture;
+    descrUpdateDesc.descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    descrUpdateDesc.tableIndex = 0;
+
+    REI_updateDescriptorTableArray(state->renderer, state->texDescriptorSet, 1, &descrUpdateDesc);
 
     state->textures.resize(1);
 
@@ -337,15 +444,15 @@ static void REI_NanoVG_renderDelete(void* userPtr)
     {
         REI_removeBuffer(state->renderer, state->vtxBuffers[i]);
     }
-    REI_free(state->vtxBuffers);
-    REI_free(state->vtxBuffersAddr);
+    state->allocator.pFree(state->allocator.pUserData, state->vtxBuffers);
+    state->allocator.pFree(state->allocator.pUserData, state->vtxBuffersAddr);
 
     for (uint32_t i = 0; i < state->desc.resourceSetCount; ++i)
     {
         REI_removeBuffer(state->renderer, state->uniBuffers[i]);
     }
-    REI_free(state->uniBuffers);
-    REI_free(state->uniBuffersAddr);
+    state->allocator.pFree(state->allocator.pUserData, state->uniBuffers);
+    state->allocator.pFree(state->allocator.pUserData, state->uniBuffersAddr);
 
     if (state->sampler)
     {
@@ -377,19 +484,14 @@ static void REI_NanoVG_renderDelete(void* userPtr)
         REI_removePipeline(state->renderer, state->fillPipeline);
         state->fillPipeline = NULL;
     }
-    if (state->shader)
-    {
-        REI_removeShader(state->renderer, state->shader);
-        state->shader = NULL;
-    }
     if (state->uniDescriptorSet)
     {
-        REI_removeDescriptorSet(state->renderer, state->uniDescriptorSet);
+        REI_removeDescriptorTableArray(state->renderer, state->uniDescriptorSet);
         state->uniDescriptorSet = NULL;
     }
     if (state->texDescriptorSet)
     {
-        REI_removeDescriptorSet(state->renderer, state->texDescriptorSet);
+        REI_removeDescriptorTableArray(state->renderer, state->texDescriptorSet);
         state->texDescriptorSet = NULL;
     }
 
@@ -399,10 +501,12 @@ static void REI_NanoVG_renderDelete(void* userPtr)
             REI_removeTexture(state->renderer, tex.tex);
     }
 
+    REI_removeTexture(state->renderer, state->dummyTexture);
+
     state->textures.~vector();
     state->calls.~vector();
 
-    REI_free(state);
+    state->allocator.pFree(state->allocator.pUserData, state);
 }
 
 static int REI_NanoVG_renderCreateTexture(void* uptr, int type, int w, int h, int imageFlags, const unsigned char* data)
@@ -440,7 +544,7 @@ static int REI_NanoVG_renderCreateTexture(void* uptr, int type, int w, int h, in
         REI_RL_TextureUpdateDesc updateDesc{};
         updateDesc.pTexture = tex.tex;
         updateDesc.pRawData = (uint8_t*)data;
-        updateDesc.format = desc.format;
+        updateDesc.format = (REI_Format)desc.format;
         updateDesc.width = desc.width;
         updateDesc.height = desc.height;
         updateDesc.depth = 1;
@@ -454,10 +558,12 @@ static int REI_NanoVG_renderCreateTexture(void* uptr, int type, int w, int h, in
     }
 
     REI_DescriptorData descrUpdateDesc{};
-    descrUpdateDesc.pName = "uTexture";
+    descrUpdateDesc.descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    descrUpdateDesc.descriptorIndex = 0; //uTexture;
     descrUpdateDesc.ppTextures = &tex.tex;
     descrUpdateDesc.count = 1;
-    REI_updateDescriptorSet(state->renderer, state->texDescriptorSet, (uint32_t)idx, 1, &descrUpdateDesc);
+    descrUpdateDesc.tableIndex = (uint32_t)idx;
+    REI_updateDescriptorTableArray(state->renderer, state->texDescriptorSet, 1, &descrUpdateDesc);
 
     //TODO support mips and mips generation
 
@@ -632,10 +738,13 @@ static void REI_NanoVG_setUniforms(REI_NanoVG_State* state, uint32_t uniformInde
     scaleTranslate[2] = -1.0f;
     scaleTranslate[3] = 1.0f;
 
-    REI_cmdBindDescriptorSet(state->cmd, state->setIndex, state->uniDescriptorSet);
-    REI_cmdBindDescriptorSet(state->cmd, (uint32_t)imageIndex, state->texDescriptorSet);
-    REI_cmdBindPushConstants(state->cmd, state->rootSignature, "vpc", scaleTranslate);
-    REI_cmdBindPushConstants(state->cmd, state->rootSignature, "fpc", &uniformIndex);
+    REI_cmdBindDescriptorTable(state->cmd, state->setIndex, state->uniDescriptorSet);
+    REI_cmdBindDescriptorTable(state->cmd, (uint32_t)imageIndex, state->texDescriptorSet);
+    REI_cmdBindPushConstants(
+        state->cmd, state->rootSignature, REI_SHADER_STAGE_VERT, 0, sizeof(scaleTranslate), scaleTranslate);
+    REI_cmdBindPushConstants(
+        state->cmd, state->rootSignature, REI_SHADER_STAGE_FRAG, sizeof(scaleTranslate), sizeof(uniformIndex),
+        &uniformIndex);
     REI_cmdBindVertexBuffer(state->cmd, 1, &state->vtxBuffers[state->setIndex], &vertex_offset);
     REI_cmdSetViewport(state->cmd, 0.0f, 0.0f, (float)state->width, (float)state->height, 0.0f, 1.0f);
 }
@@ -918,13 +1027,19 @@ error:
 
 NVGcontext* REI_NanoVG_Init(REI_Renderer* renderer, REI_Queue* queue, REI_RL_State* loader, REI_NanoVG_Desc* info)
 {
+    REI_AllocatorCallbacks allocatorCallbacks;
+    REI_setupAllocatorCallbacks(info->pAllocator, allocatorCallbacks);
+
     NVGparams         params;
-    REI_NanoVG_State* state = (REI_NanoVG_State*)REI_malloc(sizeof(REI_NanoVG_State));
+    REI_NanoVG_State* state =
+        (REI_NanoVG_State*)allocatorCallbacks.pMalloc(allocatorCallbacks.pUserData, sizeof(REI_NanoVG_State), 0);
     if (!state)
         return NULL;
+
     memset(state, 0, sizeof(REI_NanoVG_State));
     state->desc = *info;
     state->renderer = renderer;
+    state->allocator = allocatorCallbacks;
     state->queue = queue;
     state->loader = loader;
 
@@ -944,8 +1059,8 @@ NVGcontext* REI_NanoVG_Init(REI_Renderer* renderer, REI_Queue* queue, REI_RL_Sta
     params.userPtr = state;
     params.edgeAntiAlias = 0;
 
-    new (&state->textures) std::vector<REI_NanoVG_texture>();
-    new (&state->calls) std::vector<REI_NanoVG_call>();
+    new (&state->textures) REI_vector<REI_NanoVG_texture>(REI_allocator<REI_NanoVG_texture>(state->allocator));
+    new (&state->calls) REI_vector<REI_NanoVG_call>(REI_allocator<REI_NanoVG_call>(state->allocator));
 
     return nvgCreateInternal(&params);
 }

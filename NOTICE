@@ -1,0 +1,26 @@
+Project REI
+Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+
+This software contains code derived from REI project (https://github.com/Vi3LM/REI),
+available under the Apache 2.0 license (https://github.com/Vi3LM/REI/blob/main/LICENSE).
+This software contains code derived from The-Forge project (https://github.com/ConfettiFX/The-Forge),
+available under the Apache 2.0 license (https://github.com/ConfettiFX/The-Forge/blob/master/LICENSE).
+This software contains code derived from tinyrenderers project (https://github.com/chaoticbob/tinyrenderers).
+This software contains code derived from D3D12MemoryAllocator project (https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator),
+available under the MIT license (https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator/blob/master/LICENSE.txt).
+This software contains code derived from VulkanMemoryAllocator project (https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
+available under the MIT license (https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/LICENSE.txt).
+This software contains code derived from SPIRV-Reflect project (https://github.com/KhronosGroup/SPIRV-Reflect),
+available under the Apache 2.0 license (https://github.com/KhronosGroup/SPIRV-Reflect/blob/main/LICENSE).
+This software contains code derived from renderdoc project (https://github.com/baldurk/renderdoc),
+available under the MIT license (https://github.com/baldurk/renderdoc/blob/v1.x/LICENSE.md).
+This software contains code derived from Dear ImGui project (https://github.com/ocornut/imgui),
+available under the MIT license (https://github.com/ocornut/imgui/blob/master/LICENSE.txt).
+This software contains code derived from fontstash project (https://github.com/memononen/fontstash),
+available under the zlib license (https://github.com/memononen/fontstash/blob/master/LICENSE.txt).
+This software contains code derived from nanovg project (https://github.com/memononen/nanovg),
+available under the zlib license (https://github.com/memononen/nanovg/blob/master/LICENSE.txt).
+This software contains code derived from cgltf project (https://github.com/jkuhlmann/cgltf),
+available under the MIT license (https://github.com/jkuhlmann/cgltf/blob/master/LICENSE).
+This software contains code derived from stb project (https://github.com/nothings/stb).
+This software contains code derived from smhasher project (https://github.com/aappleby/smhasher/).

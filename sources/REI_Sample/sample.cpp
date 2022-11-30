@@ -1,27 +1,51 @@
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
 
-#include "REI/Interface/Common.h"
-#include "REI/Interface/Thread.h"
-#include "REI/Renderer/Renderer.h"
+#include "REI/Common.h"
+#include "REI/Thread.h"
+#include "REI/Renderer.h"
 #include "REI_Integration/ResourceLoader.h"
 
 // NanoVG dependency
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_MALLOC REI_malloc
-#define STBI_REALLOC REI_realloc
-#define STBI_FREE REI_free
 #define STBI_ASSERT REI_ASSERT
 #if defined(__ANDROID__)
 #    define STBI_NO_SIMD
 #endif
 #include "REI_Integration/3rdParty/stb/stb_image.h"
 
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STBIW_MALLOC REI_malloc
-#define STBIW_REALLOC REI_realloc
-#define STBIW_FREE REI_free
 #define STBIW_ASSERT REI_ASSERT
 #include "REI_Integration/3rdParty/stb/stb_image_write.h"
 
@@ -58,7 +82,7 @@ static void sample_init_swapchain(REI_SwapchainDesc* swapchainDesc)
 
     uint32_t count = 0;
     REI_getSwapchainTextures(swapchain, &count, NULL);
-    ppSwapchainTextures = (REI_Texture**)REI_calloc(count, sizeof(REI_Texture*));
+    ppSwapchainTextures = (REI_Texture**)malloc(count * sizeof(REI_Texture*));
     REI_getSwapchainTextures(swapchain, &count, ppSwapchainTextures);
 
     uint32_t sizeofBlock = 0;
@@ -88,7 +112,7 @@ static void sample_fini_swapchain()
 {
     sample_on_swapchain_fini();
     REI_removeBuffer(renderer, screenshotBuffer);
-    REI_free(ppSwapchainTextures);
+    free(ppSwapchainTextures);
     REI_removeSwapchain(renderer, swapchain);
 }
 

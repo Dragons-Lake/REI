@@ -169,6 +169,4 @@ tools/vcpkg.zip
 projects/android/.gradle/*
 projects/android/rei_sample/src/main/res/mipmap-*
 
-# Output folder for build_shaders.py
-sources/REI/Integration/spv/*
-sources/samples/spv/*
+imgui.ini

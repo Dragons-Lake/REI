@@ -39,6 +39,8 @@
 #define RENDERDOC_CC
 #elif defined(__APPLE__)
 #define RENDERDOC_CC
+#elif defined(REI_PLATFORM_SWITCH)
+#define RENDERDOC_CC
 #else
 #error "Unknown platform"
 #endif

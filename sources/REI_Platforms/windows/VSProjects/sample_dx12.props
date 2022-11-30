@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)..\..\..\..\build\$(ProjectName)_$(Configuration)_$(Platform)\</OutDir>
+    <IntDir>$(SolutionDir)..\..\..\..\build\temp\$(ProjectName)_$(Configuration)_$(Platform)\</IntDir>
+    <IncludePath>$(SolutionDir)..\..\..\;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+  </PropertyGroup>
+	
+	<PropertyGroup Condition="'$(Platform)'=='x64'">
+		<LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64</LibraryPath>
+	</PropertyGroup>
+	<PropertyGroup Condition="'$(Platform)'=='Win32'">
+		<LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);$(NETFXKitsDir)Lib\um\x86</LibraryPath>
+	</PropertyGroup>
+
+	<ItemDefinitionGroup Condition="'$(Configuration)'=='DebugD3D12'">
+		<ClCompile>
+			<WarningLevel>Level3</WarningLevel>
+			<Optimization>Disabled</Optimization>
+			<SDLCheck>true</SDLCheck>
+			<ConformanceMode>true</ConformanceMode>
+			<AdditionalIncludeDirectories>$(IntDir)shaders;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+			<PreprocessorDefinitions>_DEBUG;DIRECT3D12;_MBCS;REI_PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+			<MultiProcessorCompilation>true</MultiProcessorCompilation>
+			<TreatWarningAsError>true</TreatWarningAsError>
+			<LanguageStandard>stdcpp17</LanguageStandard>
+		</ClCompile>
+		<Link>
+			<SubSystem>Console</SubSystem>
+			<AdditionalDependencies>d3d12.lib;dxgi.lib;sdl2maind.lib;comdlg32.lib;shell32.lib;user32.lib;</AdditionalDependencies>
+		</Link>
+    </ItemDefinitionGroup>
+	<ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseD3D12'">
+		<ClCompile>
+			<WarningLevel>Level3</WarningLevel>
+			<Optimization>MaxSpeed</Optimization>
+			<FunctionLevelLinking>true</FunctionLevelLinking>
+			<IntrinsicFunctions>true</IntrinsicFunctions>
+			<SDLCheck>true</SDLCheck>
+			<ConformanceMode>true</ConformanceMode>
+			<AdditionalIncludeDirectories>$(IntDir)shaders;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+			<PreprocessorDefinitions>DIRECT3D12;_MBCS;REI_PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+			<MultiProcessorCompilation>true</MultiProcessorCompilation>
+			<TreatWarningAsError>true</TreatWarningAsError>
+			<LanguageStandard>stdcpp17</LanguageStandard>
+		</ClCompile>
+		<Link>
+			<SubSystem>Console</SubSystem>
+			<EnableCOMDATFolding>true</EnableCOMDATFolding>
+			<OptimizeReferences>true</OptimizeReferences>
+			<AdditionalDependencies>d3d12.lib;dxgi.lib;sdl2main.lib;comdlg32.lib;shell32.lib;user32.lib;</AdditionalDependencies>
+		</Link>
+	</ItemDefinitionGroup>
+	<Import Condition="$(VCPKG_ROOT) != ''" Project="$(VCPKG_ROOT)scripts\buildsystems\msbuild\vcpkg.targets" />
+	<Import Project="macros.props"/>
+</Project>

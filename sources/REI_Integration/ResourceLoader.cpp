@@ -1,16 +1,22 @@
 /*
- * This file is based on The-Forge source code
- * (see https://github.com/ConfettiFX/The-Forge).
-*/
-
-#define IMAGE_CLASS_ALLOWED
-
-#include <deque>
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ * Copyright (c) 2017-2022 The Forge Interactive Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
 
 #include "ResourceLoader.h"
 
-#include "REI/Interface/Common.h"
-#include "REI/Interface/Thread.h"
+#include "REI/Common.h"
+#include "REI/Thread.h"
 
 struct REI_RL_MappedMemoryRange
 {
@@ -20,10 +26,11 @@ struct REI_RL_MappedMemoryRange
 
 struct REI_RL_ResourceSet
 {
-    REI_Fence*  pFence;
-    REI_Cmd*    pCmd;
-    REI_Buffer* pBuffer;
-    void*       pMappedAddress;
+    REI_Fence*   pFence;
+    REI_CmdPool* pCmdPool;
+    REI_Cmd*     pCmd;
+    REI_Buffer*  pBuffer;
+    void*        pMappedAddress;
 };
 
 enum
@@ -62,8 +69,14 @@ struct REI_RL_UpdateRequest
 
 struct REI_RL_State
 {
-    REI_Renderer* pRenderer;
+    REI_RL_State(const REI_AllocatorCallbacks& inAllocator):
+        allocator(inAllocator), requestQueue(REI_allocator<REI_RL_UpdateRequest>(allocator))
+    {
+    }
 
+
+    REI_Renderer*             pRenderer;
+    REI_AllocatorCallbacks    allocator;
     REI_RL_ResourceLoaderDesc desc;
 
     volatile int run;
@@ -74,13 +87,12 @@ struct REI_RL_State
     ConditionVariable                queueCond;
     Mutex                            tokenMutex;
     ConditionVariable                tokenCond;
-    std::deque<REI_RL_UpdateRequest> requestQueue;
+    REI_deque<REI_RL_UpdateRequest>  requestQueue;
 
     REI_atomicptr_t requestsCompleted;
     REI_atomicptr_t requestsSubmitted;
 
     REI_Queue*          pQueue;
-    REI_CmdPool*        pCmdPool;
     REI_RL_ResourceSet* resourceSets;
     uint64_t            uniformBufferAlignment;
     uint64_t            allocatedSpace;
@@ -110,48 +122,6 @@ static REI_RL_MappedMemoryRange REI_RL_allocateStagingMemory(
     }
 
     return { nullptr, 0 };
-}
-
-static REI_ResourceState util_determine_resource_start_state(uint32_t usage)
-{
-    REI_ResourceState state = REI_RESOURCE_STATE_UNDEFINED;
-    if (usage & REI_DESCRIPTOR_TYPE_RW_TEXTURE)
-        return REI_RESOURCE_STATE_UNORDERED_ACCESS;
-    else if (usage & REI_DESCRIPTOR_TYPE_TEXTURE)
-        return REI_RESOURCE_STATE_SHADER_RESOURCE;
-    return state;
-}
-
-static REI_ResourceState util_determine_resource_start_state(const REI_BufferDesc* pBuffer)
-{
-    // Host visible (Upload Heap)
-    if (pBuffer->memoryUsage == REI_RESOURCE_MEMORY_USAGE_CPU_ONLY ||
-        pBuffer->memoryUsage == REI_RESOURCE_MEMORY_USAGE_CPU_TO_GPU)
-    {
-        return REI_RESOURCE_STATE_GENERIC_READ;
-    }
-    // Device Local (Default Heap)
-    else if (pBuffer->memoryUsage == REI_RESOURCE_MEMORY_USAGE_GPU_ONLY)
-    {
-        uint32_t usage = pBuffer->descriptors;
-
-        // Try to limit number of states used overall to avoid sync complexities
-        if (usage & REI_DESCRIPTOR_TYPE_RW_BUFFER)
-            return REI_RESOURCE_STATE_UNORDERED_ACCESS;
-        if ((usage & REI_DESCRIPTOR_TYPE_VERTEX_BUFFER) || (usage & REI_DESCRIPTOR_TYPE_UNIFORM_BUFFER))
-            return REI_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-        if (usage & REI_DESCRIPTOR_TYPE_INDEX_BUFFER)
-            return REI_RESOURCE_STATE_INDEX_BUFFER;
-        if ((usage & REI_DESCRIPTOR_TYPE_BUFFER))
-            return REI_RESOURCE_STATE_SHADER_RESOURCE;
-
-        return REI_RESOURCE_STATE_COMMON;
-    }
-    // Host Cached (Readback Heap)
-    else
-    {
-        return REI_RESOURCE_STATE_COPY_DEST;
-    }
 }
 
 struct uint3
@@ -789,6 +759,7 @@ static void streamerThreadFunc(void* pThreadData)
         {
             REI_RL_ResourceSet& resourceSet = pRMState->resourceSets[activeSet];
             pRMState->allocatedSpace = 0;
+            REI_resetCmdPool(pRMState->pRenderer, resourceSet.pCmdPool);
             REI_beginCmd(resourceSet.pCmd);
         }
         else
@@ -852,17 +823,20 @@ static void streamerThreadFunc(void* pThreadData)
 
 void REI_RL_addResourceLoader(REI_Renderer* pRenderer, REI_RL_ResourceLoaderDesc* pDesc, REI_RL_State** ppRMState)
 {
-    REI_RL_State* pRMState = REI_new(REI_RL_State);
-    pRMState->pRenderer = pRenderer;
+    REI_AllocatorCallbacks allocatorCallbacks;
+    REI_setupAllocatorCallbacks(pDesc ? pDesc->pAllocator : nullptr, allocatorCallbacks);
 
+    REI_RL_State* pRMState = REI_new<REI_RL_State>(allocatorCallbacks, allocatorCallbacks);
+
+    const REI_AllocatorCallbacks& allocator = pRMState->allocator;
+
+    pRMState->pRenderer = pRenderer;
     pRMState->run = true;
     pRMState->desc =
         pDesc ? *pDesc : REI_RL_ResourceLoaderDesc{ DEFAULT_BUFFER_SIZE, DEFAULT_BUFFER_COUNT, DEFAULT_TIMESLICE_MS };
 
     REI_QueueDesc desc = { REI_QUEUE_FLAG_NONE, REI_QUEUE_PRIORITY_NORMAL, REI_CMD_POOL_COPY };
     REI_addQueue(pRenderer, &desc, &pRMState->pQueue);
-
-    REI_addCmdPool(pRenderer, pRMState->pQueue, false, &pRMState->pCmdPool);
 
     REI_QueueProperties queueProps;
 
@@ -873,13 +847,15 @@ void REI_RL_addResourceLoader(REI_Renderer* pRenderer, REI_RL_ResourceLoaderDesc
                              queueProps.uploadGranularity.depth * maxBlockSize;
     uint64_t size = REI_max(pRMState->desc.bufferSize, minUploadSize);
 
-    pRMState->resourceSets = (REI_RL_ResourceSet*)REI_malloc(sizeof(REI_RL_ResourceSet) * pRMState->desc.bufferCount);
+    pRMState->resourceSets = (REI_RL_ResourceSet*)allocator.pMalloc(allocator.pUserData, sizeof(REI_RL_ResourceSet) * pRMState->desc.bufferCount, 0);
     for (uint32_t i = 0; i < pRMState->desc.bufferCount; ++i)
     {
         REI_RL_ResourceSet& resourceSet = pRMState->resourceSets[i];
         REI_addFence(pRenderer, &resourceSet.pFence);
 
-        REI_addCmd(pRenderer, pRMState->pCmdPool, false, &resourceSet.pCmd);
+        REI_addCmdPool(pRenderer, pRMState->pQueue, false, &resourceSet.pCmdPool);
+
+        REI_addCmd(pRenderer, resourceSet.pCmdPool, false, &resourceSet.pCmd);
 
         REI_BufferDesc bufferDesc = {};
         bufferDesc.size = size;
@@ -918,18 +894,18 @@ void REI_RL_removeResourceLoader(REI_RL_State* pRMState)
         REI_RL_ResourceSet& resourceSet = pRMState->resourceSets[i];
         REI_removeBuffer(pRMState->pRenderer, resourceSet.pBuffer);
 
-        REI_removeCmd(pRMState->pRenderer, pRMState->pCmdPool, resourceSet.pCmd);
+        REI_removeCmd(pRMState->pRenderer, resourceSet.pCmdPool, resourceSet.pCmd);
+
+        REI_removeCmdPool(pRMState->pRenderer, resourceSet.pCmdPool);
 
         REI_removeFence(pRMState->pRenderer, resourceSet.pFence);
     }
 
-    REI_free(pRMState->resourceSets);
-
-    REI_removeCmdPool(pRMState->pRenderer, pRMState->pCmdPool);
+    pRMState->allocator.pFree(pRMState->allocator.pUserData, pRMState->resourceSets);
 
     REI_removeQueue(pRMState->pQueue);
 
-    REI_delete(pRMState);
+    REI_delete(pRMState->allocator, pRMState);
 }
 
 static void

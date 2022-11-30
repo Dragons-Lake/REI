@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="DebugD3D12|Win32">
+      <Configuration>DebugD3D12</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="DebugD3D12|x64">
+      <Configuration>DebugD3D12</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="DebugVulkan|Win32">
+      <Configuration>DebugVulkan</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseD3D12|Win32">
+      <Configuration>ReleaseD3D12</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseD3D12|x64">
+      <Configuration>ReleaseD3D12</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseVulkan|Win32">
+      <Configuration>ReleaseVulkan</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="DebugVulkan|x64">
+      <Configuration>DebugVulkan</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseVulkan|x64">
+      <Configuration>ReleaseVulkan</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{1237CDE1-CEDA-43CD-90EF-0D4A115C90CE}</ProjectGuid>
+    <RootNamespace>sampletriangle</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>sample_triangle</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup>
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='DebugVulkan'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='DebugD3D12'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseVulkan'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseD3D12'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="sample_vulkan.props" Condition="'$(Configuration)'=='ReleaseVulkan' OR '$(Configuration)'=='DebugVulkan'" />
+    <Import Project="sample_dx12.props" Condition="'$(Configuration)'=='ReleaseD3D12' OR '$(Configuration)'=='DebugD3D12'" />
+  </ImportGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\samples\sample_triangle.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="REI.vcxproj">
+      <Project>{360e9d40-1fac-4d32-aa23-ac106ddd9c5e}</Project>
+    </ProjectReference>
+    <ProjectReference Include="REI_Integration.vcxproj">
+      <Project>{ab0391f5-a052-4b3f-8120-1396b50eb864}</Project>
+    </ProjectReference>
+    <ProjectReference Include="REI_Sample.vcxproj">
+      <Project>{b33336f7-f497-45bd-82af-0b8ccb7d054d}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\..\samples\hlsl\shader_ps.hlsl">
+      <FileType>Document</FileType>
+      <Outputs>$(IntDir)shaders\shaderbin\%(Filename).bin.h</Outputs>
+      <OutputItemType>ClInclude</OutputItemType>
+      <BuildInParallel>true</BuildInParallel>
+      <Command Condition="'$(Configuration)'=='DebugD3D12' OR '$(Configuration)'=='ReleaseD3D12'">$(DXC_x64) -T "ps_6_0" -Vn "triangle_ps_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Command>
+      <Message Condition="'$(Configuration)'=='DebugD3D12' OR '$(Configuration)'=='ReleaseD3D12'">Building shader: $(DXC_x64) -T "ps_6_0" -Vn "triangle_ps_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Message>
+      <Command Condition="'$(Configuration)'=='DebugVulkan' OR '$(Configuration)'=='ReleaseVulkan'">$(DXC_x64) -spirv -T "ps_6_0" -Vn "triangle_ps_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Command>
+      <Message Condition="'$(Configuration)'=='DebugVulkan' OR '$(Configuration)'=='ReleaseVulkan'">Building shader: $(DXC_x64) -spirv -T "ps_6_0" -Vn "triangle_ps_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Message>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\..\samples\hlsl\shader_vs.hlsl">
+      <FileType>Document</FileType>
+      <Outputs>$(IntDir)shaders\shaderbin\%(Filename).bin.h</Outputs>
+      <OutputItemType>ClInclude</OutputItemType>
+      <BuildInParallel>true</BuildInParallel>
+      <Command Condition="'$(Configuration)'=='DebugD3D12' OR '$(Configuration)'=='ReleaseD3D12'">$(DXC_x64) -T "vs_6_0" -Vn "triangle_vs_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Command>
+      <Message Condition="'$(Configuration)'=='DebugD3D12' OR '$(Configuration)'=='ReleaseD3D12'">Building shader: $(DXC_x64) -T "vs_6_0" -Vn "triangle_vs_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Message>
+      <Command Condition="'$(Configuration)'=='DebugVulkan' OR '$(Configuration)'=='ReleaseVulkan'">$(DXC_x64) -spirv -T "vs_6_0" -Vn "triangle_vs_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Command>
+      <Message Condition="'$(Configuration)'=='DebugVulkan' OR '$(Configuration)'=='ReleaseVulkan'">Building shader: $(DXC_x64) -spirv -T "vs_6_0" -Vn "triangle_vs_bytecode" -I "$(SolutionDir)..\hlsl" -Fh  "$(IntDir)shaders\shaderbin\%(Filename).bin.h"  "%(FullPath)"</Message>
+    </CustomBuild>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

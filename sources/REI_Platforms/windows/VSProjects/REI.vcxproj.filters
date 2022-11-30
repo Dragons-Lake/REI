@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="REI">
+      <UniqueIdentifier>{5d66ef4f-8813-4535-8c7c-e17c9f2ea6ca}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="REI\3rdParty">
+      <UniqueIdentifier>{c4dcf8d1-9af4-4ea7-9d41-745ca61b47a1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="REI\hlsl">
+      <UniqueIdentifier>{ba904347-9ff6-4188-821f-30615c90634c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\REI\RendererD3D12.cpp">
+      <Filter>REI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\REI\RendererVk.cpp">
+      <Filter>REI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\RendererD3D12_Windows.cpp">
+      <Filter>REI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\RendererVk_Windows.cpp">
+      <Filter>REI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common_Windows.cpp">
+      <Filter>REI</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\REI\Renderer.h">
+      <Filter>REI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\REI\RendererD3D12.h">
+      <Filter>REI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\REI\RendererVk.h">
+      <Filter>REI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\REI\Common.h">
+      <Filter>REI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\REI\Thread.h">
+      <Filter>REI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\REI\3rdParty\D3D12MemoryAllocator\D3D12MemoryAllocator.h">
+      <Filter>REI\3rdParty</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\REI\3rdParty\VulkanMemoryAllocator\VulkanMemoryAllocator.h">
+      <Filter>REI\3rdParty</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\hlsl\defines.hlsli">
+      <Filter>REI\hlsl</Filter>
+    </None>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="sample">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hlsl">
+      <UniqueIdentifier>{8d2588a5-a824-48c0-9492-8f1cbf1135e6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\samples\sample_gltf.cpp">
+      <Filter>sample</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\..\samples\hlsl\gltf_mesh_ps.hlsl">
+      <Filter>hlsl</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\..\..\samples\hlsl\gltf_mesh_vs.hlsl">
+      <Filter>hlsl</Filter>
+    </CustomBuild>
+  </ItemGroup>
+</Project>

@@ -1,8 +1,24 @@
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef _WIN32
-#    define WIN32_LEAN_AND_MEAN
+#    ifndef WIN32_LEAN_AND_MEAN
+#        define WIN32_LEAN_AND_MEAN 1
+#    endif
 #    include "windows.h"
 #endif
 #define FONTSTASH_IMPLEMENTATION
@@ -13,38 +29,31 @@
 #    define strcpy strcpy_s
 #endif
 
+static const uint32_t MAX_SHADER_COUNT = 2;
+
 struct REI_Fontstash_State
 {
-    REI_Fontstash_Desc  desc;
-    REI_Renderer*       renderer;
-    REI_Queue*          queue;
-    REI_RL_State*       loader;
-    REI_RootSignature*  rootSignature;
-    REI_DescriptorSet*  descriptorSet;
-    REI_Pipeline*       pipeline;
-    REI_Sampler*        fontSampler;
-    REI_Texture*        fontTexture;
-    REI_Shader*         shader;
-    REI_Buffer**        buffers;
-    void**              buffersAddr;
-    uint32_t            setIndex;
-    uint32_t            vertexCount;
-    uint32_t            fontTextureWidth;
+    REI_Fontstash_Desc        desc;
+    REI_Renderer*             renderer;
+    REI_AllocatorCallbacks    allocator;
+    REI_Queue*                queue;
+    REI_RL_State*             loader;
+    REI_RootSignature*        rootSignature;
+    REI_DescriptorTableArray* descriptorSet;
+    REI_Pipeline*             pipeline;
+    REI_Sampler*              fontSampler;
+    REI_Texture*              fontTexture;
+    REI_Buffer**              buffers;
+    void**                    buffersAddr;
+    uint32_t                  setIndex;
+    uint32_t                  vertexCount;
+    uint32_t                  fontTextureWidth;
 };
 
-// fontstash.vert, compiled with:
-// # glslangValidator -V -x -o fontstash.vert.u32.h fontstash.vert
-// see sources/shaders/build.ninja
-static uint32_t vert_spv[] = {
-#include "spv/fontstash.vert.u32.h"
-};
 
-// fontstash.frag, compiled with:
-// # glslangValidator -V -x -o fontstash.frag.u32.h fontstash.frag
-// see sources/shaders/build.ninja
-static uint32_t frag_spv[] = {
-#include "spv/fontstash.frag.u32.h"
-};
+#include "shaderbin/fontstash_vs.bin.h"
+
+#include "shaderbin/fontstash_ps.bin.h"
 
 struct FontVert
 {
@@ -67,9 +76,6 @@ static int REI_Fontstash_renderResize(void* userPtr, int width, int height)
     textureDesc.flags = REI_TEXTURE_CREATION_FLAG_OWN_MEMORY_BIT;
     textureDesc.width = (uint32_t)width;
     textureDesc.height = (uint32_t)height;
-    textureDesc.depth = 1;
-    textureDesc.arraySize = 1;
-    textureDesc.mipLevels = 1;
     textureDesc.format = REI_FMT_R8_UNORM;
     textureDesc.descriptors = REI_DESCRIPTOR_TYPE_TEXTURE;
     REI_addTexture(state->renderer, &textureDesc, &state->fontTexture);
@@ -77,9 +83,12 @@ static int REI_Fontstash_renderResize(void* userPtr, int width, int height)
     state->fontTextureWidth = width;
 
     REI_DescriptorData params[1] = {};
-    params[0].pName = "uTexture";
+    params[0].descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    params[0].descriptorIndex = 0;    //uTexture;
     params[0].ppTextures = &state->fontTexture;
-    REI_updateDescriptorSet(state->renderer, state->descriptorSet, 0, 1, params);
+    params[0].count = 1;
+    params[0].tableIndex = 0;
+    REI_updateDescriptorTableArray(state->renderer, state->descriptorSet, 1, params);
 
     return 1;
 }
@@ -87,55 +96,84 @@ static int REI_Fontstash_renderResize(void* userPtr, int width, int height)
 static int REI_Fontstash_renderCreate(void* userPtr, int width, int height)
 {
     REI_Fontstash_State* state = (REI_Fontstash_State*)userPtr;
-    REI_ShaderDesc       shaderDesc{};
-    shaderDesc.stages = REI_SHADER_STAGE_VERT | REI_SHADER_STAGE_FRAG;
-    shaderDesc.vert = { (uint8_t*)vert_spv, sizeof(vert_spv) };
-    shaderDesc.frag = { (uint8_t*)frag_spv, sizeof(frag_spv) };
-    REI_addShader(state->renderer, &shaderDesc, &state->shader);
+    REI_ShaderDesc       shaderDesc[MAX_SHADER_COUNT] = {
+        { REI_SHADER_STAGE_VERT, (uint8_t*)fontstash_vs_bytecode, sizeof(fontstash_vs_bytecode) },
+        { REI_SHADER_STAGE_FRAG, (uint8_t*)fontstash_ps_bytecode, sizeof(fontstash_ps_bytecode) }
+    };
+    REI_Shader* shaders[MAX_SHADER_COUNT] = {};
+    REI_addShaders(state->renderer, shaderDesc, MAX_SHADER_COUNT, shaders);
 
-    REI_SamplerDesc samplerDesc = { REI_FILTER_LINEAR,
-                                    REI_FILTER_LINEAR,
-                                    REI_MIPMAP_MODE_LINEAR,
-                                    REI_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    REI_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    REI_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    0.0f,
-                                    1.0f,
-                                    REI_CMP_NEVER };
+    REI_SamplerDesc samplerDesc = {
+        REI_FILTER_LINEAR,
+        REI_FILTER_LINEAR,
+        REI_MIPMAP_MODE_LINEAR,
+        REI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        REI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        REI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        REI_CMP_NEVER,
+        0.0f,
+        1.0f,
+    };
     REI_addSampler(state->renderer, &samplerDesc, &state->fontSampler);
 
-    const char*           staticSampNames[] = { "uSampler" };
     REI_RootSignatureDesc rootSigDesc = {};
-    rootSigDesc.ppShaders = &state->shader;
-    rootSigDesc.shaderCount = 1;
-    rootSigDesc.ppStaticSamplerNames = staticSampNames;
-    rootSigDesc.ppStaticSamplers = &state->fontSampler;
-    rootSigDesc.staticSamplerCount = 1;
+
+    REI_PushConstantRange pConst = {};
+    pConst.offset = 0;
+    pConst.size = sizeof(float[4]);
+    pConst.stageFlags = REI_SHADER_STAGE_VERT;
+
+    REI_DescriptorBinding binding = {};
+
+    binding.descriptorCount = 1;
+    binding.descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    binding.reg = 0;
+    binding.binding = 0;
+
+    REI_DescriptorTableLayout setLayout = {};
+    setLayout.bindingCount = 1;
+    setLayout.pBindings = &binding;
+    setLayout.slot = REI_DESCRIPTOR_TABLE_SLOT_1;
+    setLayout.stageFlags = REI_SHADER_STAGE_FRAG;
+
+    REI_StaticSamplerBinding staticSamplerBinding = {};
+    staticSamplerBinding.descriptorCount = 1;
+    staticSamplerBinding.reg = 0;
+    staticSamplerBinding.binding = 0;
+    staticSamplerBinding.ppStaticSamplers = &state->fontSampler;
+
+    rootSigDesc.pipelineType = REI_PIPELINE_TYPE_GRAPHICS;
+    rootSigDesc.pushConstantRangeCount = 1;
+    rootSigDesc.pPushConstantRanges = &pConst;
+    rootSigDesc.tableLayoutCount = 1;
+    rootSigDesc.pTableLayouts = &setLayout;
+    rootSigDesc.staticSamplerBindingCount = 1;
+    rootSigDesc.staticSamplerSlot = REI_DESCRIPTOR_TABLE_SLOT_0;
+    rootSigDesc.staticSamplerStageFlags = REI_SHADER_STAGE_FRAG;
+    rootSigDesc.pStaticSamplerBindings = &staticSamplerBinding;
+
     REI_addRootSignature(state->renderer, &rootSigDesc, &state->rootSignature);
 
-    REI_DescriptorSetDesc descriptorSetDesc = {};
+    REI_DescriptorTableArrayDesc descriptorSetDesc = {};
     descriptorSetDesc.pRootSignature = state->rootSignature;
-    descriptorSetDesc.maxSets = 1;
-    descriptorSetDesc.setIndex = REI_DESCRIPTOR_SET_INDEX_0;
-    REI_addDescriptorSet(state->renderer, &descriptorSetDesc, &state->descriptorSet);
+    descriptorSetDesc.maxTables = 1;
+    descriptorSetDesc.slot = REI_DESCRIPTOR_TABLE_SLOT_1;
+    REI_addDescriptorTableArray(state->renderer, &descriptorSetDesc, &state->descriptorSet);
 
-    REI_VertexLayout vertexLayout{};
-    vertexLayout.attribCount = 3;
-    vertexLayout.attribs[0].semanticNameLength = 4;
-    strcpy(vertexLayout.attribs[0].semanticName, "aPos");
-    vertexLayout.attribs[0].offset = OFFSETOF(FontVert, pos);
-    vertexLayout.attribs[0].location = 0;
-    vertexLayout.attribs[0].format = REI_FMT_R32G32_SFLOAT;
-    vertexLayout.attribs[1].semanticNameLength = 3;
-    strcpy(vertexLayout.attribs[1].semanticName, "aUV");
-    vertexLayout.attribs[1].offset = OFFSETOF(FontVert, uv);
-    vertexLayout.attribs[1].location = 1;
-    vertexLayout.attribs[1].format = REI_FMT_R32G32_SFLOAT;
-    vertexLayout.attribs[2].semanticNameLength = 6;
-    strcpy(vertexLayout.attribs[2].semanticName, "aColor");
-    vertexLayout.attribs[2].offset = OFFSETOF(FontVert, col);
-    vertexLayout.attribs[2].location = 2;
-    vertexLayout.attribs[2].format = REI_FMT_R8G8B8A8_UNORM;
+    const size_t     vertexAttribCount = 3;
+    REI_VertexAttrib vertexAttribs[vertexAttribCount] = {};
+    vertexAttribs[0].semantic = REI_SEMANTIC_POSITION0;
+    vertexAttribs[0].offset = OFFSETOF(FontVert, pos);
+    vertexAttribs[0].location = 0;
+    vertexAttribs[0].format = REI_FMT_R32G32_SFLOAT;
+    vertexAttribs[1].semantic = REI_SEMANTIC_TEXCOORD0;
+    vertexAttribs[1].offset = OFFSETOF(FontVert, uv);
+    vertexAttribs[1].location = 1;
+    vertexAttribs[1].format = REI_FMT_R32G32_SFLOAT;
+    vertexAttribs[2].semantic = REI_SEMANTIC_COLOR0;
+    vertexAttribs[2].offset = OFFSETOF(FontVert, col);
+    vertexAttribs[2].location = 2;
+    vertexAttribs[2].format = REI_FMT_R8G8B8A8_UNORM;
 
     REI_RasterizerStateDesc rasterizerStateDesc{};
     rasterizerStateDesc.cullMode = REI_CULL_MODE_NONE;
@@ -150,30 +188,37 @@ static int REI_Fontstash_renderCreate(void* userPtr, int width, int height)
     blendState.blendAlphaModes[0] = REI_BM_ADD;
     blendState.masks[0] = REI_COLOR_MASK_ALL;
 
+    REI_Format       colorFormat = (REI_Format)state->desc.colorFormat;
     REI_PipelineDesc pipelineDesc = {};
     pipelineDesc.type = REI_PIPELINE_TYPE_GRAPHICS;
     REI_GraphicsPipelineDesc& graphicsDesc = pipelineDesc.graphicsDesc;
     graphicsDesc.primitiveTopo = REI_PRIMITIVE_TOPO_TRI_LIST;
     graphicsDesc.renderTargetCount = 1;
-    graphicsDesc.pColorFormats = &state->desc.colorFormat;
+    graphicsDesc.pColorFormats = &colorFormat;
     graphicsDesc.sampleCount = state->desc.sampleCount;
     graphicsDesc.depthStencilFormat = state->desc.depthStencilFormat;
     graphicsDesc.pRootSignature = state->rootSignature;
-    graphicsDesc.pShaderProgram = state->shader;
-    graphicsDesc.pVertexLayout = &vertexLayout;
+    graphicsDesc.ppShaderPrograms = shaders;
+    graphicsDesc.shaderProgramCount = MAX_SHADER_COUNT;
+    graphicsDesc.pVertexAttribs = vertexAttribs;
+    graphicsDesc.vertexAttribCount = vertexAttribCount;
     graphicsDesc.pRasterizerState = &rasterizerStateDesc;
     graphicsDesc.pBlendState = &blendState;
     REI_addPipeline(state->renderer, &pipelineDesc, &state->pipeline);
 
+    REI_removeShaders(state->renderer, MAX_SHADER_COUNT, shaders);
+
     REI_BufferDesc vbDesc = {};
-    vbDesc.descriptors = REI_DESCRIPTOR_TYPE_VERTEX_BUFFER;
+    vbDesc.descriptors = REI_DESCRIPTOR_TYPE_BUFFER | REI_DESCRIPTOR_TYPE_VERTEX_BUFFER;
     vbDesc.memoryUsage = REI_RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
     vbDesc.vertexStride = sizeof(FontVert);
+    vbDesc.structStride = sizeof(FontVert);
     vbDesc.size = state->desc.vertexBufferSize;
+    vbDesc.elementCount = vbDesc.size / vbDesc.structStride;
     vbDesc.flags = REI_BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT | REI_BUFFER_CREATION_FLAG_OWN_MEMORY_BIT;
 
-    state->buffers = (REI_Buffer**)REI_calloc(state->desc.resourceSetCount, sizeof(REI_Buffer*));
-    state->buffersAddr = (void**)REI_calloc(state->desc.resourceSetCount, sizeof(void*));
+    state->buffers = (REI_Buffer**)REI_calloc(state->allocator, state->desc.resourceSetCount * sizeof(REI_Buffer*));
+    state->buffersAddr = (void**)REI_calloc(state->allocator, state->desc.resourceSetCount * sizeof(void*));
     for (uint32_t i = 0; i < state->desc.resourceSetCount; ++i)
     {
         REI_addBuffer(state->renderer, &vbDesc, &state->buffers[i]);
@@ -230,8 +275,8 @@ static void REI_Fontstash_renderDelete(void* userPtr)
     {
         REI_removeBuffer(state->renderer, state->buffers[i]);
     }
-    REI_free(state->buffers);
-    REI_free(state->buffersAddr);
+    state->allocator.pFree(state->allocator.pUserData, state->buffers);
+    state->allocator.pFree(state->allocator.pUserData, state->buffersAddr);
 
     if (state->fontTexture)
     {
@@ -253,35 +298,36 @@ static void REI_Fontstash_renderDelete(void* userPtr)
         REI_removePipeline(state->renderer, state->pipeline);
         state->pipeline = NULL;
     }
-    if (state->shader)
-    {
-        REI_removeShader(state->renderer, state->shader);
-        state->shader = NULL;
-    }
     if (state->descriptorSet)
     {
-        REI_removeDescriptorSet(state->renderer, state->descriptorSet);
+        REI_removeDescriptorTableArray(state->renderer, state->descriptorSet);
         state->descriptorSet = NULL;
     }
 
-    REI_free(state);
+    state->allocator.pFree(state->allocator.pUserData, state);
 }
 
 FONScontext*
     REI_Fontstash_Init(REI_Renderer* renderer, REI_Queue* queue, REI_RL_State* loader, REI_Fontstash_Desc* info)
 {
-    FONSparams           params;
+    REI_AllocatorCallbacks allocatorCallbacks;
+    REI_setupAllocatorCallbacks(info->pAllocator, allocatorCallbacks);
+
     REI_Fontstash_State* state;
 
-    state = (REI_Fontstash_State*)REI_malloc(sizeof(REI_Fontstash_State));
+    state =
+        (REI_Fontstash_State*)allocatorCallbacks.pMalloc(allocatorCallbacks.pUserData, sizeof(REI_Fontstash_State), 0);
     if (!state)
         return NULL;
+
     memset(state, 0, sizeof(REI_Fontstash_State));
     state->desc = *info;
     state->renderer = renderer;
+    state->allocator = allocatorCallbacks;
     state->queue = queue;
     state->loader = loader;
 
+    FONSparams params;
     memset(&params, 0, sizeof(params));
     params.width = info->texWidth;
     params.height = info->texHeight;
@@ -310,7 +356,7 @@ void REI_Fontstash_Render(FONScontext* ctx, REI_Cmd* pCmd)
     // Bind pipeline and descriptor sets:
     {
         REI_cmdBindPipeline(pCmd, state->pipeline);
-        REI_cmdBindDescriptorSet(pCmd, 0, state->descriptorSet);
+        REI_cmdBindDescriptorTable(pCmd, 0, state->descriptorSet);
     }
 
     // Bind Vertex And Index Buffer:
@@ -331,7 +377,8 @@ void REI_Fontstash_Render(FONScontext* ctx, REI_Cmd* pCmd)
         scaleTranslate[1] = -2.0f / state->desc.fbHeight;
         scaleTranslate[2] = -1.0f;
         scaleTranslate[3] = 1.0f;
-        REI_cmdBindPushConstants(pCmd, state->rootSignature, "pc", scaleTranslate);
+        REI_cmdBindPushConstants(
+            pCmd, state->rootSignature, REI_SHADER_STAGE_VERT, 0, sizeof(scaleTranslate), scaleTranslate);
     }
 
     // Draw

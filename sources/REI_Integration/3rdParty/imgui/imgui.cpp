@@ -885,6 +885,9 @@ static void             RenderWindowTitleBarContents(ImGuiWindow* window, const 
 
 }
 
+const char* getPlatformImguiIniFilename();
+const char* getPlatformImguiLogFilename();
+
 //-----------------------------------------------------------------------------
 // [SECTION] CONTEXT AND MEMORY ALLOCATORS
 //-----------------------------------------------------------------------------
@@ -1004,8 +1007,8 @@ ImGuiIO::ImGuiIO()
     DisplaySize = ImVec2(-1.0f, -1.0f);
     DeltaTime = 1.0f/60.0f;
     IniSavingRate = 5.0f;
-    IniFilename = "imgui.ini";
-    LogFilename = "imgui_log.txt";
+    IniFilename = getPlatformImguiIniFilename();
+    LogFilename = getPlatformImguiLogFilename();
     MouseDoubleClickTime = 0.30f;
     MouseDoubleClickMaxDist = 6.0f;
     for (int i = 0; i < ImGuiKey_COUNT; i++)

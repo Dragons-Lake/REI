@@ -1,4 +1,18 @@
-﻿#ifndef SAMPLE_TEST
+﻿/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
+#ifndef SAMPLE_TEST
 
 #    include <string.h>
 #    include <math.h>
@@ -32,7 +46,7 @@ struct PerfGraph
 };
 
 static REI_RL_State* resourceLoader;
-static REI_CmdPool*  cmdPool;
+static REI_CmdPool*  cmdPool[FRAME_COUNT];
 static REI_Cmd*      pCmds[FRAME_COUNT];
 static REI_Texture*  colorBuffer;
 static REI_Texture*  depthBuffer;
@@ -63,9 +77,11 @@ int sample_on_init()
 {
     REI_RL_addResourceLoader(renderer, nullptr, &resourceLoader);
 
-    REI_addCmdPool(renderer, gfxQueue, false, &cmdPool);
     for (size_t i = 0; i < FRAME_COUNT; ++i)
-        REI_addCmd(renderer, cmdPool, false, &pCmds[i]);
+    {
+        REI_addCmdPool(renderer, gfxQueue, false, &cmdPool[i]);
+        REI_addCmd(renderer, cmdPool[i], false, &pCmds[i]);
+    }
 
     REI_QueryPoolDesc queryPoolDesc{ REI_QUERY_TYPE_TIMESTAMP, 2 * FRAME_COUNT };
     REI_addQueryPool(renderer, &queryPoolDesc, &timeQueryPool);
@@ -98,8 +114,10 @@ void sample_on_fini()
     REI_removeQueryPool(renderer, timeQueryPool);
 
     for (size_t i = 0; i < FRAME_COUNT; ++i)
-        REI_removeCmd(renderer, cmdPool, pCmds[i]);
-    REI_removeCmdPool(renderer, cmdPool);
+    {
+        REI_removeCmd(renderer, cmdPool[i], pCmds[i]);
+        REI_removeCmdPool(renderer, cmdPool[i]);
+    }
 
     REI_RL_removeResourceLoader(resourceLoader);
 }
@@ -125,9 +143,13 @@ void sample_on_swapchain_init(const REI_SwapchainDesc* swapchainDesc)
     depthRTDesc.descriptors = REI_DESCRIPTOR_TYPE_RENDER_TARGET;
     REI_addTexture(renderer, &depthRTDesc, &depthBuffer);
 
-    REI_NanoVG_Desc fsInfo = {
-        colorRTDesc.format, depthRTDesc.format, colorRTDesc.sampleCount, FRAME_COUNT, 1024 * 256, 4096, 256
-    };
+    REI_NanoVG_Desc fsInfo = { colorRTDesc.format,
+                               depthRTDesc.format,
+                               colorRTDesc.sampleCount,
+                               FRAME_COUNT,
+                               1024 * 256,
+                               4096,
+                               256 };
 
     vg = REI_NanoVG_Init(renderer, gfxQueue, resourceLoader, &fsInfo);
     loadDemoData(vg, &data);
@@ -167,7 +189,9 @@ void sample_on_frame(const FrameData* frameData)
 
     REI_Texture* renderTarget = frameData->backBuffer;
     REI_Cmd*     cmd = pCmds[frameData->setIndex];
+    REI_CmdPool* pCmdPool = cmdPool[frameData->setIndex];
 
+    REI_resetCmdPool(renderer, pCmdPool);
     REI_beginCmd(cmd);
 
     REI_cmdResetQueryPool(cmd, timeQueryPool, timestampIndex, 2);
@@ -180,7 +204,7 @@ void sample_on_frame(const FrameData* frameData)
     };
     REI_cmdResourceBarrier(cmd, 0, nullptr, 2, barriers);
 
-    REI_LoadActionsDesc loadActions = { 0 };
+    REI_LoadActionsDesc loadActions = {};
     loadActions.loadActionsColor[0] = REI_LOAD_ACTION_CLEAR;
     if (!premult)
     {
@@ -235,7 +259,9 @@ void sample_on_frame(const FrameData* frameData)
     REI_cmdEndQuery(cmd, timeQueryPool, timestampIndex + 1);
 
     REI_cmdResolveQuery(cmd, readbackBuffer, timestampIndex * sizeof(uint64_t), timeQueryPool, timestampIndex, 2);
-
+    barriers[0] = { colorBuffer, REI_RESOURCE_STATE_RESOLVE_SOURCE, REI_RESOURCE_STATE_COMMON };
+    barriers[1] = { depthBuffer, REI_RESOURCE_STATE_DEPTH_WRITE, REI_RESOURCE_STATE_COMMON };
+    REI_cmdResourceBarrier(cmd, 0, nullptr, 2, barriers);
     REI_endCmd(cmd);
 
     sample_submit(cmd);
@@ -248,8 +274,10 @@ void sample_on_frame(const FrameData* frameData)
         &gpuGraph, (float)((timestampData[timestampIndex + 1] - timestampData[timestampIndex]) * gpuTimestampScaler));
 }
 
-#ifdef _MSC_VER
-#    define snprintf _snprintf
+#ifdef _WIN32
+#    define snprintf _snprintf_s
+#    define sprintf sprintf_s
+#    define strncpy strncpy_s
 #endif
 
 #define ICON_SEARCH 0x1F50D
@@ -296,22 +324,27 @@ static char* cpToUTF8(int cp, char* str)
             str[5] = 0x80 | (cp & 0x3f);
             cp = cp >> 6;
             cp |= 0x4000000;
+            [[fallthrough]];
         case 5:
             str[4] = 0x80 | (cp & 0x3f);
             cp = cp >> 6;
             cp |= 0x200000;
+            [[fallthrough]];
         case 4:
             str[3] = 0x80 | (cp & 0x3f);
             cp = cp >> 6;
             cp |= 0x10000;
+            [[fallthrough]];
         case 3:
             str[2] = 0x80 | (cp & 0x3f);
             cp = cp >> 6;
             cp |= 0x800;
+            [[fallthrough]];
         case 2:
             str[1] = 0x80 | (cp & 0x3f);
             cp = cp >> 6;
             cp |= 0xc0;
+            [[fallthrough]];
         case 1: str[0] = cp;
     }
     return str;

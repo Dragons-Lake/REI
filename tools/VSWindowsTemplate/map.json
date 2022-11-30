@@ -1,5 +1,0 @@
-{
-    "sample.vcxproj.template": "{name}.vcxproj",
-    "sample.vcxproj.filters.template": "{name}.vcxproj.filters",
-    "sample.vcxproj.user": "{name}.vcxproj.user"
-}

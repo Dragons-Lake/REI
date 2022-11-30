@@ -1,3 +1,17 @@
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
 #include <stdio.h>
 
 #include "ResourceLoader.h"
@@ -7,35 +21,27 @@
 #    define strcpy strcpy_s
 #endif
 
+static const uint32_t MAX_SHADER_COUNT = 2;
+
 struct REI_ImGui_State
 {
-    REI_ImGui_Desc     desc;
-    REI_Renderer*      renderer;
-    REI_RootSignature* rootSignature;
-    REI_DescriptorSet* descriptorSet;
-    REI_Pipeline*      pipeline;
-    REI_Sampler*       fontSampler;
-    REI_Texture*       fontTexture;
-    REI_Shader*        shader;
-    REI_Buffer**       buffers;
-    void**             buffersAddr;
+    REI_ImGui_Desc            desc;
+    REI_Renderer*             renderer;
+    REI_RootSignature*        rootSignature;
+    REI_DescriptorTableArray* descriptorSet;
+    REI_Pipeline*             pipeline;
+    REI_Sampler*              fontSampler;
+    REI_Texture*              fontTexture;
+    REI_Buffer**              buffers;
+    void**                    buffersAddr;
+    REI_AllocatorCallbacks    allocator;
 };
 
 static REI_ImGui_State g_State = {};
 
-// imgui.vert, compiled with:
-// # glslangValidator -V -x -o imgui.vert.u32.h imgui.vert
-// see sources/shaders/build.ninja
-static uint32_t vert_spv[] = {
-#include "spv/imgui.vert.u32.h"
-};
+#include "shaderbin/imgui_vs.bin.h"
 
-// imgui.frag, compiled with:
-// # glslangValidator -V -x -o imgui.frag.u32 imgui.frag
-// see sources/shaders/build.ninja
-static uint32_t frag_spv[] = {
-#include "spv/imgui.frag.u32.h"
-};
+#include "shaderbin/imgui_ps.bin.h"
 
 static void REI_ImGui_SetupRenderState(
     ImDrawData* draw_data, REI_Cmd* command_buffer, REI_Buffer* vertex_buffer, REI_Buffer* index_buffer, int fb_width,
@@ -44,7 +50,7 @@ static void REI_ImGui_SetupRenderState(
     // Bind pipeline and descriptor sets:
     {
         REI_cmdBindPipeline(command_buffer, g_State.pipeline);
-        REI_cmdBindDescriptorSet(command_buffer, 0, g_State.descriptorSet);
+        REI_cmdBindDescriptorTable(command_buffer, 0, g_State.descriptorSet);
     }
 
     // Bind Vertex And Index Buffer:
@@ -67,7 +73,8 @@ static void REI_ImGui_SetupRenderState(
         scaleTranslate[1] = -2.0f / draw_data->DisplaySize.y;
         scaleTranslate[2] = -1.0f - draw_data->DisplayPos.x * scaleTranslate[0];
         scaleTranslate[3] = 1.0f + draw_data->DisplayPos.y * scaleTranslate[1];
-        REI_cmdBindPushConstants(command_buffer, g_State.rootSignature, "pc", scaleTranslate);
+        REI_cmdBindPushConstants(
+            command_buffer, g_State.rootSignature, REI_SHADER_STAGE_VERT, 0, sizeof(scaleTranslate), scaleTranslate);
     }
 }
 
@@ -185,9 +192,6 @@ bool REI_ImGui_CreateFontsTexture(REI_RL_State* loader, REI_RL_RequestId* token)
     textureDesc.flags = REI_TEXTURE_CREATION_FLAG_OWN_MEMORY_BIT;
     textureDesc.width = (uint32_t)width;
     textureDesc.height = (uint32_t)height;
-    textureDesc.depth = 1;
-    textureDesc.arraySize = 1;
-    textureDesc.mipLevels = 1;
     textureDesc.format = REI_FMT_R8G8B8A8_UNORM;
     textureDesc.descriptors = REI_DESCRIPTOR_TYPE_TEXTURE;
     REI_addTexture(g_State.renderer, &textureDesc, &g_State.fontTexture);
@@ -207,9 +211,11 @@ bool REI_ImGui_CreateFontsTexture(REI_RL_State* loader, REI_RL_RequestId* token)
     io.Fonts->TexID = (void*)g_State.fontTexture;
 
     REI_DescriptorData params[1] = {};
-    params[0].pName = "uTexture";
+    params[0].descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    params[0].descriptorIndex = 0;    //uTexture
     params[0].ppTextures = &g_State.fontTexture;
-    REI_updateDescriptorSet(g_State.renderer, g_State.descriptorSet, 0, 1, params);
+    params[0].tableIndex = 0;
+    REI_updateDescriptorTableArray(g_State.renderer, g_State.descriptorSet, 1, params);
 
     // Store our identifier
     io.Fonts->TexID = (ImTextureID)(intptr_t)g_State.fontTexture;
@@ -219,55 +225,85 @@ bool REI_ImGui_CreateFontsTexture(REI_RL_State* loader, REI_RL_RequestId* token)
 
 bool REI_ImGui_CreateDeviceObjects()
 {
-    REI_ShaderDesc shaderDesc{};
-    shaderDesc.stages = REI_SHADER_STAGE_VERT | REI_SHADER_STAGE_FRAG;
-    shaderDesc.vert = { (uint8_t*)vert_spv, sizeof(vert_spv) };
-    shaderDesc.frag = { (uint8_t*)frag_spv, sizeof(frag_spv) };
-    REI_addShader(g_State.renderer, &shaderDesc, &g_State.shader);
+    REI_ShaderDesc shaderDesc[MAX_SHADER_COUNT] = {
+        shaderDesc[0] = { REI_SHADER_STAGE_VERT, (uint8_t*)imgui_vs_bytecode, sizeof(imgui_vs_bytecode) },
+        shaderDesc[1] = { REI_SHADER_STAGE_FRAG, (uint8_t*)imgui_ps_bytecode, sizeof(imgui_ps_bytecode) }
+    };
+    REI_Shader* shaders[MAX_SHADER_COUNT] = {};
+    REI_addShaders(g_State.renderer, shaderDesc, MAX_SHADER_COUNT, shaders);
 
-    REI_SamplerDesc samplerDesc = { REI_FILTER_LINEAR,
-                                    REI_FILTER_LINEAR,
-                                    REI_MIPMAP_MODE_LINEAR,
-                                    REI_ADDRESS_MODE_REPEAT,
-                                    REI_ADDRESS_MODE_REPEAT,
-                                    REI_ADDRESS_MODE_REPEAT,
-                                    0.0f,
-                                    1.0f,
-                                    REI_CMP_NEVER };
+    REI_SamplerDesc samplerDesc = {
+        REI_FILTER_LINEAR,
+        REI_FILTER_LINEAR,
+        REI_MIPMAP_MODE_LINEAR,
+        REI_ADDRESS_MODE_REPEAT,
+        REI_ADDRESS_MODE_REPEAT,
+        REI_ADDRESS_MODE_REPEAT,
+        REI_CMP_NEVER,
+        0.0f,
+        1.0f,
+    };
     REI_addSampler(g_State.renderer, &samplerDesc, &g_State.fontSampler);
 
-    const char*           staticSampNames[] = { "uSampler" };
     REI_RootSignatureDesc rootSigDesc = {};
-    rootSigDesc.ppShaders = &g_State.shader;
-    rootSigDesc.shaderCount = 1;
-    rootSigDesc.ppStaticSamplerNames = staticSampNames;
-    rootSigDesc.ppStaticSamplers = &g_State.fontSampler;
-    rootSigDesc.staticSamplerCount = 1;
+
+    REI_PushConstantRange pConst = {};
+    pConst.offset = 0;
+    pConst.size = sizeof(float[4]);
+    pConst.stageFlags = REI_SHADER_STAGE_VERT;
+
+    REI_DescriptorBinding binding = {};
+
+    binding.descriptorCount = 1;
+    binding.descriptorType = REI_DESCRIPTOR_TYPE_TEXTURE;
+    binding.reg = 0;
+    binding.binding = 0;
+
+    REI_DescriptorTableLayout setLayout = {};
+    setLayout.bindingCount = 1;
+    setLayout.pBindings = &binding;
+    setLayout.slot = REI_DESCRIPTOR_TABLE_SLOT_1;
+    setLayout.stageFlags = REI_SHADER_STAGE_FRAG;
+
+    REI_StaticSamplerBinding staticSamplerBinding = {};
+    staticSamplerBinding.descriptorCount = 1;
+    staticSamplerBinding.reg = 0;
+    staticSamplerBinding.binding = 0;
+    staticSamplerBinding.ppStaticSamplers = &g_State.fontSampler;
+
+    rootSigDesc.pipelineType = REI_PIPELINE_TYPE_GRAPHICS;
+    rootSigDesc.pushConstantRangeCount = 1;
+    rootSigDesc.pPushConstantRanges = &pConst;
+    rootSigDesc.tableLayoutCount = 1;
+    rootSigDesc.pTableLayouts = &setLayout;
+    rootSigDesc.staticSamplerBindingCount = 1;
+    rootSigDesc.staticSamplerSlot = REI_DESCRIPTOR_TABLE_SLOT_0;
+    rootSigDesc.staticSamplerStageFlags = REI_SHADER_STAGE_FRAG;
+    rootSigDesc.pStaticSamplerBindings = &staticSamplerBinding;
+
     REI_addRootSignature(g_State.renderer, &rootSigDesc, &g_State.rootSignature);
 
-    REI_DescriptorSetDesc descriptorSetDesc = {};
+    REI_DescriptorTableArrayDesc descriptorSetDesc = {};
     descriptorSetDesc.pRootSignature = g_State.rootSignature;
-    descriptorSetDesc.maxSets = 1;
-    descriptorSetDesc.setIndex = REI_DESCRIPTOR_SET_INDEX_0;
-    REI_addDescriptorSet(g_State.renderer, &descriptorSetDesc, &g_State.descriptorSet);
+    descriptorSetDesc.maxTables = 1;
+    descriptorSetDesc.slot = REI_DESCRIPTOR_TABLE_SLOT_1;
+    REI_addDescriptorTableArray(g_State.renderer, &descriptorSetDesc, &g_State.descriptorSet);
 
-    REI_VertexLayout vertexLayout{};
-    vertexLayout.attribCount = 3;
-    vertexLayout.attribs[0].semanticNameLength = 4;
-    strcpy(vertexLayout.attribs[0].semanticName, "aPos");
-    vertexLayout.attribs[0].offset = IM_OFFSETOF(ImDrawVert, pos);
-    vertexLayout.attribs[0].location = 0;
-    vertexLayout.attribs[0].format = REI_FMT_R32G32_SFLOAT;
-    vertexLayout.attribs[1].semanticNameLength = 3;
-    strcpy(vertexLayout.attribs[1].semanticName, "aUV");
-    vertexLayout.attribs[1].offset = IM_OFFSETOF(ImDrawVert, uv);
-    vertexLayout.attribs[1].location = 1;
-    vertexLayout.attribs[1].format = REI_FMT_R32G32_SFLOAT;
-    vertexLayout.attribs[2].semanticNameLength = 6;
-    strcpy(vertexLayout.attribs[2].semanticName, "aColor");
-    vertexLayout.attribs[2].offset = IM_OFFSETOF(ImDrawVert, col);
-    vertexLayout.attribs[2].location = 2;
-    vertexLayout.attribs[2].format = REI_FMT_R8G8B8A8_UNORM;
+
+    const size_t     vertexAttribCount = 3;
+    REI_VertexAttrib vertexAttribs[vertexAttribCount] = {};
+    vertexAttribs[0].semantic = REI_SEMANTIC_POSITION0;
+    vertexAttribs[0].offset = IM_OFFSETOF(ImDrawVert, pos);
+    vertexAttribs[0].location = 0;
+    vertexAttribs[0].format = REI_FMT_R32G32_SFLOAT;
+    vertexAttribs[1].semantic = REI_SEMANTIC_TEXCOORD0;
+    vertexAttribs[1].offset = IM_OFFSETOF(ImDrawVert, uv);
+    vertexAttribs[1].location = 1;
+    vertexAttribs[1].format = REI_FMT_R32G32_SFLOAT;
+    vertexAttribs[2].semantic = REI_SEMANTIC_COLOR0;
+    vertexAttribs[2].offset = IM_OFFSETOF(ImDrawVert, col);
+    vertexAttribs[2].location = 2;
+    vertexAttribs[2].format = REI_FMT_R8G8B8A8_UNORM;
 
     REI_RasterizerStateDesc rasterizerStateDesc{};
     rasterizerStateDesc.cullMode = REI_CULL_MODE_NONE;
@@ -282,26 +318,33 @@ bool REI_ImGui_CreateDeviceObjects()
     blendState.blendAlphaModes[0] = REI_BM_ADD;
     blendState.masks[0] = REI_COLOR_MASK_ALL;
 
+    REI_Format       colorFormat = (REI_Format)g_State.desc.colorFormat;
     REI_PipelineDesc pipelineDesc = {};
     pipelineDesc.type = REI_PIPELINE_TYPE_GRAPHICS;
     REI_GraphicsPipelineDesc& graphicsDesc = pipelineDesc.graphicsDesc;
     graphicsDesc.primitiveTopo = REI_PRIMITIVE_TOPO_TRI_LIST;
     graphicsDesc.renderTargetCount = 1;
-    graphicsDesc.pColorFormats = &g_State.desc.colorFormat;
+    graphicsDesc.pColorFormats = &colorFormat;
     graphicsDesc.sampleCount = g_State.desc.sampleCount;
     graphicsDesc.depthStencilFormat = g_State.desc.depthStencilFormat;
     graphicsDesc.pRootSignature = g_State.rootSignature;
-    graphicsDesc.pShaderProgram = g_State.shader;
-    graphicsDesc.pVertexLayout = &vertexLayout;
+    graphicsDesc.ppShaderPrograms = shaders;
+    graphicsDesc.shaderProgramCount = MAX_SHADER_COUNT;
+    graphicsDesc.pVertexAttribs = vertexAttribs;
+    graphicsDesc.vertexAttribCount = vertexAttribCount;
     graphicsDesc.pRasterizerState = &rasterizerStateDesc;
     graphicsDesc.pBlendState = &blendState;
     REI_addPipeline(g_State.renderer, &pipelineDesc, &g_State.pipeline);
 
+    REI_removeShaders(g_State.renderer, MAX_SHADER_COUNT, shaders);
+
     REI_BufferDesc vbDesc = {};
-    vbDesc.descriptors = REI_DESCRIPTOR_TYPE_VERTEX_BUFFER;
+    vbDesc.descriptors = REI_DESCRIPTOR_TYPE_BUFFER | REI_DESCRIPTOR_TYPE_VERTEX_BUFFER;
     vbDesc.memoryUsage = REI_RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
     vbDesc.vertexStride = sizeof(ImDrawVert);
+    vbDesc.structStride = sizeof(ImDrawVert);
     vbDesc.size = g_State.desc.vertexBufferSize;
+    vbDesc.elementCount = vbDesc.size / vbDesc.structStride;
     vbDesc.flags = REI_BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT | REI_BUFFER_CREATION_FLAG_OWN_MEMORY_BIT;
 
     REI_BufferDesc ibDesc = vbDesc;
@@ -309,8 +352,8 @@ bool REI_ImGui_CreateDeviceObjects()
     ibDesc.indexType = REI_INDEX_TYPE_UINT16;
     ibDesc.size = g_State.desc.indexBufferSize;
 
-    g_State.buffers = (REI_Buffer**)REI_calloc(g_State.desc.resourceSetCount * 2, sizeof(REI_Buffer*));
-    g_State.buffersAddr = (void**)REI_calloc(g_State.desc.resourceSetCount * 2, sizeof(void*));
+    g_State.buffers = (REI_Buffer**)REI_calloc(g_State.allocator, g_State.desc.resourceSetCount * 2 * sizeof(REI_Buffer*));
+    g_State.buffersAddr = (void**)REI_calloc(g_State.allocator, g_State.desc.resourceSetCount * 2 * sizeof(void*));
     for (uint32_t i = 0; i < g_State.desc.resourceSetCount; ++i)
     {
         REI_addBuffer(g_State.renderer, &vbDesc, &g_State.buffers[2 * i]);
@@ -331,6 +374,8 @@ bool REI_ImGui_Init(REI_Renderer* renderer, REI_ImGui_Desc* info)
 
     IM_ASSERT(renderer);
 
+    REI_setupAllocatorCallbacks(info->pAllocator, g_State.allocator);
+
     g_State.renderer = renderer;
     g_State.desc = *info;
     REI_ImGui_CreateDeviceObjects();
@@ -345,8 +390,8 @@ void REI_ImGui_Shutdown()
         REI_removeBuffer(g_State.renderer, g_State.buffers[2 * i]);
         REI_removeBuffer(g_State.renderer, g_State.buffers[2 * i + 1]);
     }
-    REI_free(g_State.buffers);
-    REI_free(g_State.buffersAddr);
+    g_State.allocator.pFree(g_State.allocator.pUserData, g_State.buffers);
+    g_State.allocator.pFree(g_State.allocator.pUserData, g_State.buffersAddr);
 
     if (g_State.fontTexture)
     {
@@ -368,14 +413,9 @@ void REI_ImGui_Shutdown()
         REI_removePipeline(g_State.renderer, g_State.pipeline);
         g_State.pipeline = NULL;
     }
-    if (g_State.shader)
-    {
-        REI_removeShader(g_State.renderer, g_State.shader);
-        g_State.shader = NULL;
-    }
     if (g_State.descriptorSet)
     {
-        REI_removeDescriptorSet(g_State.renderer, g_State.descriptorSet);
+        REI_removeDescriptorTableArray(g_State.renderer, g_State.descriptorSet);
         g_State.descriptorSet = NULL;
     }
 }

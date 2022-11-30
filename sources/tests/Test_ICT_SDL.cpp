@@ -1,3 +1,17 @@
+/*
+ * Copyright (c) 2023-2024 Dragons Lake, part of Room 8 Group.
+ * Copyright (c) 2019-2022 Mykhailo Parfeniuk, Vladyslav Serhiienko.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at 
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ *
+ * This file contains modified code from the REI project source code
+ * (see https://github.com/Vi3LM/REI).
+ */
+
 #ifdef _WIN32
 #    define _CRT_SECURE_NO_WARNINGS
 #endif
@@ -9,16 +23,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
+#include <errno.h>
 
-#include <direct.h>
-
-#include "REI/Interface/Common.h"
+#include "REI/Common.h"
+#include "REI_Sample/Log.h"
 
 // NanoVG dependency
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wimplicit-fallthrough"
+#endif
+
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_MALLOC REI_malloc
-#define STBI_REALLOC REI_realloc
-#define STBI_FREE REI_free
 #define STBI_ASSERT REI_ASSERT
 #if defined(__ANDROID__)
 #    define STBI_NO_SIMD
@@ -26,14 +42,17 @@
 #include "REI_integration/3rdParty/stb/stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STBIW_MALLOC REI_malloc
-#define STBIW_REALLOC REI_realloc
-#define STBIW_FREE REI_free
 #define STBIW_ASSERT REI_ASSERT
 #include "REI_integration/3rdParty/stb/stb_image_write.h"
 
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#endif
+
+#ifdef _WIN32
 #include "REI/3rdparty/renderdoc/renderdoc_app.h"
-#include "REI/Renderer/Renderer.h"
+#endif
+#include "REI/Renderer.h"
 
 #include "REI_Integration/rm_math.h"
 #include "REI_Integration/SimpleCamera.h"
@@ -101,38 +120,9 @@ static REI_Buffer*  screenshotBuffer;
 static void*        screenshotData;
 static uint32_t     screenshotSize;
 
-static const char*  dir_paths[DIRECTORY_COUNT];
+const char* dir_paths[DIRECTORY_COUNT];
 
-static bool dir_exists(const char* dir)
-{
-#if defined(_WIN32)
-    struct _stat fi;
-    return dir && (_stat(dir, &fi) == 0) && ((fi.st_mode & _S_IFDIR) != 0);
-#else
-    struct stat fi;
-    return dir && (stat(dir, &fi) == 0) && (S_ISDIR(fi.st_mode));
-#endif
-}
-
-static void init_directories()
-{
-    if (dir_exists("data"))
-    {
-        dir_paths[DIRECTORY_DATA] = "data";
-    }
-    else if (dir_exists("../data"))
-    {
-        dir_paths[DIRECTORY_DATA] = "../data";
-    }
-    else if (dir_exists("../../data"))
-    {
-        dir_paths[DIRECTORY_DATA] = "../../data";
-    }
-    else if (dir_exists("../../../data"))
-    {
-        dir_paths[DIRECTORY_DATA] = "../../../data";
-    }
-}
+void init_directories();
 
 static void log_output(void* userPtr, const char* msg)
 {
@@ -149,6 +139,8 @@ static void log_output(void* userPtr, const char* msg)
 
 const char* get_filename(const char* path);
 
+static inline bool str_is_empty(const char* str) { return !str || !str[0]; }
+
 void sample_save_screenshot(void* data, int w, int h, const char* name)
 {
     unsigned char* image = (unsigned char*)malloc(w * h * 4);
@@ -161,26 +153,24 @@ void sample_save_screenshot(void* data, int w, int h, const char* name)
 
 static FILE* register_log_output(const char* path)
 {
-    char logFileName[1024];
-    strcpy(logFileName, get_filename(path));
-    //Minimum Length check
-    if (!logFileName || !logFileName[0])
-    {
-        strcpy(logFileName, "Log");
-    }
-    strcat(logFileName, ".log");
+    char        logFileName[1024];
+    const char* filename = get_filename(path);
+    snprintf(logFileName, 1024, "%s%s.log", dir_paths[DIRECTORY_LOG], str_is_empty(filename) ? "Log" : filename);
+
     FILE* file = fopen(logFileName, "w");
-    REI_LogAddOutput(file, log_output);
+    sample_log_add_output(file, log_output);
     if (file)
     {
         fprintf(file, "date       time     [thread name/id ]                   file:line    v | message\n");
         fflush(file);
 
-        REI_LogWrite(LL_INFO, __FILE__, __LINE__, "Opened log file %s", logFileName);
+        sample_log(REI_LOG_TYPE_INFO, "Opened log file %s", logFileName);
     }
     else
     {
-        REI_LogWrite(LL_ERROR, __FILE__, __LINE__, "Failed to create log file %s", logFileName);
+        sample_log(
+            REI_LOG_TYPE_INFO, "Failed to create log file %s , error: %s ", logFileName,
+            strerror(errno));
     }
 
     return file;
@@ -188,7 +178,7 @@ static FILE* register_log_output(const char* path)
 
 int sample_init(Sample* sample, REI_SwapchainDesc* swapchainDesc)
 {
-    REI_RendererDesc desc{ "Test_ICT", nullptr, nullptr, REI_SHADER_TARGET_5_1 };
+    REI_RendererDesc desc{ "Test_ICT", nullptr, REI_SHADER_TARGET_5_1, false, nullptr, sample_log };
 
     REI_initRenderer(&desc, &renderer);
 
@@ -214,13 +204,13 @@ int sample_init(Sample* sample, REI_SwapchainDesc* swapchainDesc)
     uint32_t sizeofBlock = 0;
     switch (swapchainDesc->colorFormat)
     {
-    case REI_FMT_A2B10G10R10_UNORM:
-    case REI_FMT_B8G8R8A8_UNORM:
-    case REI_FMT_R8G8B8A8_UNORM: sizeofBlock = 4; break;
-    case REI_FMT_R5G5B5A1_UNORM:
-    case REI_FMT_R5G5B5X1_UNORM:
-    case REI_FMT_R5G6B5_UNORM: sizeofBlock = 2; break;
-    default: REI_ASSERT(0);
+        case REI_FMT_A2B10G10R10_UNORM:
+        case REI_FMT_B8G8R8A8_UNORM:
+        case REI_FMT_R8G8B8A8_UNORM: sizeofBlock = 4; break;
+        case REI_FMT_R5G5B5A1_UNORM:
+        case REI_FMT_R5G5B5X1_UNORM:
+        case REI_FMT_R5G6B5_UNORM: sizeofBlock = 2; break;
+        default: REI_ASSERT(0);
     }
     screenshotSize = sizeofBlock * swapchainDesc->width * swapchainDesc->height;
 
@@ -273,6 +263,7 @@ void sample_render(Sample* sample, uint64_t dt, uint32_t w, uint32_t h)
 
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
     RENDERDOC_API_1_1_2* rd_api = NULL;
     void*                solib = SDL_LoadObject(RENDERDOC_SO_FILE);
     if (solib)
@@ -283,6 +274,7 @@ int main(int argc, char* argv[])
     }
 
     SAFE_CALL(rd_api, SetCaptureFilePathTemplate("./REI_ICT_Test"));
+#endif
 
     init_directories();
 
@@ -298,18 +290,19 @@ int main(int argc, char* argv[])
     for (Sample& sample: samples)
     {
         sample_init(&sample, &swapchainDesc);
-
+#ifdef _WIN32
         SAFE_CALL(rd_api, StartFrameCapture(0, 0));
+#endif
         sample_render(&sample, 0, w, h);
         REI_waitQueueIdle(gfxQueue);
 
         char fileName[256];
-        snprintf(fileName, 256, "ICT_%s_frame_%d.png", sample.name, 0);
+        snprintf(fileName, 256, "%sICT_%s_frame_%d.png", dir_paths[DIRECTORY_LOG], sample.name, 0);
 
         sample_save_screenshot(screenshotData, w, h, fileName);
-
+#ifdef _WIN32
         SAFE_CALL(rd_api, EndFrameCapture(0, 0));
-
+#endif
         sample_fini(&sample);
     }
 
@@ -318,9 +311,9 @@ int main(int argc, char* argv[])
         fflush(file);
         fclose(file);
     }
-
+#ifdef _WIN32
     SDL_UnloadObject(solib);
-
+#endif
     return 0;
 }
 

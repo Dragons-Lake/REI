@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="sample">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hlsl">
+      <UniqueIdentifier>{35d97537-80ef-41d0-ab01-b51ca6ca45eb}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\samples\sample_triangle.cpp">
+      <Filter>sample</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\..\samples\hlsl\shader_ps.hlsl">
+      <Filter>hlsl</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\..\..\samples\hlsl\shader_vs.hlsl">
+      <Filter>hlsl</Filter>
+    </CustomBuild>
+  </ItemGroup>
+</Project>
